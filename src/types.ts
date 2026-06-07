@@ -1,6 +1,6 @@
 export type ProjectStatus = "concept" | "active" | "paused" | "shipped";
 export type TaskPriority = "high" | "med" | "low";
-export type View = "dashboard" | "detail" | "ai" | "settings" | "kanban" | "focus" | "review" | "dependencies" | "timeline" | "tags";
+export type View = "dashboard" | "detail" | "ai" | "settings" | "kanban" | "focus" | "review" | "dependencies" | "timeline" | "tags" | "archive";
 
 // ── KANBAN ────────────────────────────────────────────────────
 export interface KanbanColumn {
@@ -57,12 +57,13 @@ export interface Project {
   effort: number;
   energy: number;
   confidence: number;
-  daysLeft: number;
+  daysLeft: number;         // DEPRECATED — computed from deadlineDate at runtime
+  deadlineDate: string;     // ISO date string e.g. "2026-06-21" — source of truth
   colorIdx: number;
   tags: string[];
   tasks: Task[];
   createdAt: string;
-  lastTouched: string;      // ISO - updated whenever project is opened/edited
+  lastTouched: string;      // ISO — updated whenever project is opened/edited
   decayDays: number;        // days of inactivity before decay kicks in (default 7)
   blockedBy: string[];      // ids of projects that must ship first
   kanbanColumnId?: string;
@@ -76,6 +77,7 @@ export interface ProjectScore {
   decayPenalty: number;
   blockPenalty: number;
   stage: string;
+  liveDaysLeft: number;
 }
 
 // ── THEMES ────────────────────────────────────────────────────

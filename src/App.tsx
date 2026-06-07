@@ -1,9 +1,30 @@
 import React, {
   useCallback, useEffect, useMemo, useRef, useState,
 } from "react";
+
+// ── Electron bridge types ──────────────────────────────────────
+declare global {
+  interface Window {
+    electron?: {
+      platform: string;
+      getVersion: () => Promise<string>;
+      updater: {
+        check:    () => Promise<{ ok?: boolean; error?: string }>;
+        download: () => Promise<{ ok?: boolean; error?: string }>;
+        install:  () => void;
+        on: (event: string, cb: (data: unknown) => void) => (() => void);
+      };
+      secrets: {
+        isAvailable: () => Promise<boolean>;
+        encrypt: (t: string) => Promise<{ ciphertext?: string; error?: string }>;
+        decrypt: (c: string) => Promise<{ plaintext?: string; error?: string }>;
+      };
+    };
+  }
+}
 import type {
   KanbanColumn, Project, ProjectStatus, Settings, ThemeSettings,
-  TaskPriority, View, AccentTheme, TypographyTheme,
+  Task, TaskPriority, View, AccentTheme, TypographyTheme,
   DensityTheme, TextureTheme, FocusSession, WeeklyReview,
   BorderRadiusTheme, AnimationSpeedTheme, SidebarWidthTheme, CardStyleTheme,
 } from "./types";
@@ -36,10 +57,48 @@ const load = <T,>(key: string, fallback: T): T => {
   try { const s = localStorage.getItem(key); return s ? JSON.parse(s) as T : fallback; }
   catch { return fallback; }
 };
-const persist = <T,>(key: string, val: T) => localStorage.setItem(key, JSON.stringify(val));
+const persist = <T,>(key: string, val: T) => {
+  try { localStorage.setItem(key, JSON.stringify(val)); }
+  catch (e) {
+    // QuotaExceededError - attempt to free space by trimming score history
+    if (e instanceof DOMException && e.name === "QuotaExceededError") {
+      console.warn("[Meridian] localStorage quota exceeded - trimming score history");
+      try {
+        const projects = load<Project[]>(SK.projects, []);
+        const trimmed = projects.map((p: Project) => ({ ...p, scoreHistory: (p.scoreHistory ?? []).slice(-7) }));
+        localStorage.setItem(SK.projects, JSON.stringify(trimmed));
+        localStorage.setItem(key, JSON.stringify(val));
+      } catch { console.error("[Meridian] Could not recover from quota error."); }
+    }
+  }
+};
+
+// Compute days left from a deadline date (positive = future, negative = past)
+// Compute live days left from a project (always fresh)
+export function livedays(p: { deadlineDate?: string; daysLeft: number }): number {
+  if (p.deadlineDate) {
+    const today = new Date(); today.setHours(0,0,0,0);
+    const target = new Date(p.deadlineDate); target.setHours(0,0,0,0);
+    return Math.round((target.getTime() - today.getTime()) / 86400000);
+  }
+  return p.daysLeft;
+}
+
+export function daysFromDeadline(deadlineDate: string): number {
+  if (!deadlineDate) return 99;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const target = new Date(deadlineDate); target.setHours(0, 0, 0, 0);
+  return Math.round((target.getTime() - today.getTime()) / 86400000);
+}
 
 // Migrate old projects that may lack new fields
 function migrateProject(p: Partial<Project>): Project {
+  // If no deadlineDate, convert legacy daysLeft to a real date
+  const deadlineDate = p.deadlineDate || (() => {
+    const d = new Date();
+    d.setDate(d.getDate() + (p.daysLeft ?? 14));
+    return d.toISOString().slice(0, 10);
+  })();
   return {
     focusSessions: [],
     scoreHistory: [],
@@ -49,7 +108,9 @@ function migrateProject(p: Partial<Project>): Project {
     kanbanColumnId: "",
     tags: [],
     tasks: [],
+    daysLeft: daysFromDeadline(deadlineDate), // computed, not stored raw
     ...p,
+    deadlineDate,
   } as Project;
 }
 
@@ -79,15 +140,20 @@ function useTypewriter(word: string, speed = 88) {
 }
 
 // ── BLANK PROJECT ─────────────────────────────────────────────
-const blankProject = (colorIdx: number): Omit<Project, "id"> => ({
-  name: "", desc: "", track: "", status: "concept",
-  impact: 7, effort: 5, energy: 7, confidence: 7,
-  daysLeft: 14, colorIdx, tags: [] as string[], tasks: [],
-  createdAt: new Date().toISOString(),
-  lastTouched: new Date().toISOString(),
-  decayDays: 7, blockedBy: [], kanbanColumnId: "",
-  focusSessions: [], scoreHistory: [],
-});
+const blankProject = (colorIdx: number): Omit<Project, "id"> => {
+  const d = new Date(); d.setDate(d.getDate() + 14);
+  const deadlineDate = d.toISOString().slice(0, 10);
+  return {
+    name: "", desc: "", track: "", status: "concept",
+    impact: 7, effort: 5, energy: 7, confidence: 7,
+    daysLeft: 14, deadlineDate, colorIdx,
+    tags: [] as string[], tasks: [],
+    createdAt: new Date().toISOString(),
+    lastTouched: new Date().toISOString(),
+    decayDays: 7, blockedBy: [], kanbanColumnId: "",
+    focusSessions: [], scoreHistory: [],
+  };
+};
 
 // ── ICONS ─────────────────────────────────────────────────────
 const I = {
@@ -108,8 +174,12 @@ const I = {
   cmd:      () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M18 3a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3H6a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3V6a3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3h12a3 3 0 0 0 3-3 3 3 0 0 0-3-3z"/></svg>,
   close:    () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>,
   play:     () => <svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="5,3 19,12 5,21"/></svg>,
-  pause:    () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>,
+  pause:    () => <svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="5" y="3" width="5" height="18" rx="1"/><rect x="14" y="3" width="5" height="18" rx="1"/></svg>,
   reset:    () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>,
+  skip:     () => <svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="5,3 15,12 5,21"/><rect x="17" y="3" width="3" height="18" rx="1"/></svg>,
+  archive:  () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>,
+  unarchive:() => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><polyline points="8 12 12 8 16 12"/><line x1="12" y1="8" x2="12" y2="16"/></svg>,
+  edit:     () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>,
 };
 
 const COL_COLORS = ["#6b7280","#f97316","#a78bfa","#4ade80","#f472b6","#60a5fa","#facc15","#22d3ee","#fb923c","#34d399","#e879f9","#f87171"];
@@ -122,41 +192,30 @@ interface PomoState {
   secondsLeft: number;
   workMins: number;
   breakMins: number;
-  elapsed: number; // seconds elapsed in current session
+  elapsed: number;
 }
 
 function Pomodoro({
-  project,
-  color,
-  onSessionComplete,
+  project, color, onSessionComplete,
 }: {
   project: Project;
   color: string;
   onSessionComplete: (session: FocusSession) => void;
 }) {
-  const WORK_DEFAULT = 25 * 60;
-  const BREAK_DEFAULT = 5 * 60;
   const [state, setState] = useState<PomoState>({
-    running: false,
-    mode: "work",
-    secondsLeft: WORK_DEFAULT,
-    workMins: 25,
-    breakMins: 5,
-    elapsed: 0,
+    running: false, mode: "work",
+    secondsLeft: 25 * 60, workMins: 25, breakMins: 5, elapsed: 0,
   });
+  const [showSettings, setShowSettings] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const sessionStart = useRef<number>(0);
 
   useEffect(() => {
     if (state.running) {
-      sessionStart.current = Date.now() - state.elapsed * 1000;
       intervalRef.current = setInterval(() => {
         setState(s => {
           if (s.secondsLeft <= 1) {
-            // Session complete
             if (s.mode === "work") {
-              const dur = s.workMins * 60;
-              onSessionComplete({ date: new Date().toISOString(), duration: dur, projectId: project.id });
+              onSessionComplete({ date: new Date().toISOString(), duration: s.workMins * 60, projectId: project.id });
               return { ...s, running: false, mode: "break", secondsLeft: s.breakMins * 60, elapsed: 0 };
             }
             return { ...s, running: false, mode: "work", secondsLeft: s.workMins * 60, elapsed: 0 };
@@ -170,91 +229,127 @@ function Pomodoro({
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [state.running]);
 
-  const toggle = () => setState(s => ({ ...s, running: !s.running }));
-  const resetTimer = () => {
+  const startPause = () => setState(s => ({ ...s, running: !s.running }));
+  const reset = () => {
     if (intervalRef.current) clearInterval(intervalRef.current);
-    if (state.running && state.mode === "work" && state.elapsed > 60) {
+    if (state.mode === "work" && state.elapsed >= 60)
       onSessionComplete({ date: new Date().toISOString(), duration: state.elapsed, projectId: project.id });
-    }
     setState(s => ({ ...s, running: false, secondsLeft: s.workMins * 60, elapsed: 0, mode: "work" }));
+  };
+  const skip = () => {
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    if (state.mode === "work" && state.elapsed >= 60)
+      onSessionComplete({ date: new Date().toISOString(), duration: state.elapsed, projectId: project.id });
+    setState(s => {
+      const next: PomoMode = s.mode === "work" ? "break" : "work";
+      return { ...s, running: false, mode: next, secondsLeft: next === "break" ? s.breakMins * 60 : s.workMins * 60, elapsed: 0 };
+    });
   };
 
   const totalSecs = state.mode === "work" ? state.workMins * 60 : state.breakMins * 60;
-  const pct = 1 - state.secondsLeft / totalSecs;
-  const radius = 76;
-  const circ = 2 * Math.PI * radius;
-  const mins = Math.floor(state.secondsLeft / 60);
-  const secs = state.secondsLeft % 60;
-  const strokeColor = state.mode === "work" ? color : "var(--text3)";
+  const pct       = state.elapsed / totalSecs;
+  const radius    = 74;
+  const circ      = 2 * Math.PI * radius;
+  const mins      = Math.floor(state.secondsLeft / 60);
+  const secs      = state.secondsLeft % 60;
+  const ringColor = state.mode === "work" ? color : "var(--text3)";
+  const isWork    = state.mode === "work";
 
-  const recentSessions = [...(project.focusSessions ?? [])].reverse().slice(0, 5);
-  const totalToday = (project.focusSessions ?? [])
-    .filter(s => s.date.slice(0, 10) === new Date().toISOString().slice(0, 10))
-    .reduce((a, s) => a + s.duration, 0);
+  const sessions  = project.focusSessions ?? [];
+  const todayStr  = new Date().toISOString().slice(0, 10);
+  const todayTime = sessions.filter(s => s.date.slice(0, 10) === todayStr).reduce((a, s) => a + s.duration, 0);
+  const recent    = [...sessions].reverse().slice(0, 6);
 
   return (
-    <>
+    <div className="pomo-wrap">
+      {/* Stats */}
       <div className="focus-stats-grid">
-        <div className="focus-stat">
-          <div className="focus-stat-lbl">Today</div>
-          <div className="focus-stat-val" style={{ fontSize: "1rem", color }}>{fmtDuration(totalToday)}</div>
-        </div>
-        <div className="focus-stat">
-          <div className="focus-stat-lbl">This week</div>
-          <div className="focus-stat-val" style={{ fontSize: "1rem" }}>{fmtDuration(focusThisWeek(project.focusSessions ?? []))}</div>
-        </div>
-        <div className="focus-stat">
-          <div className="focus-stat-lbl">All time</div>
-          <div className="focus-stat-val" style={{ fontSize: "1rem" }}>{fmtDuration(totalFocusTime(project.focusSessions ?? []))}</div>
-        </div>
-        <div className="focus-stat">
-          <div className="focus-stat-lbl">Sessions</div>
-          <div className="focus-stat-val" style={{ fontSize: "1rem" }}>{(project.focusSessions ?? []).length}</div>
-        </div>
+        <div className="focus-stat"><div className="focus-stat-lbl">Today</div><div className="focus-stat-val" style={{ color }}>{fmtDuration(todayTime)}</div></div>
+        <div className="focus-stat"><div className="focus-stat-lbl">This week</div><div className="focus-stat-val">{fmtDuration(focusThisWeek(sessions))}</div></div>
+        <div className="focus-stat"><div className="focus-stat-lbl">All time</div><div className="focus-stat-val">{fmtDuration(totalFocusTime(sessions))}</div></div>
+        <div className="focus-stat"><div className="focus-stat-lbl">Sessions</div><div className="focus-stat-val">{sessions.length}</div></div>
       </div>
 
-      <div>
-        <div className="pomo-label">{state.mode === "work" ? "Work session" : "Break"}</div>
-        <div className="pomo-ring-wrap">
-          <div className="pomo-ring">
-            <svg viewBox="0 0 180 180">
-              <circle className="pomo-ring-bg" cx="90" cy="90" r={radius} />
-              <circle
-                className="pomo-ring-progress"
-                cx="90" cy="90" r={radius}
-                stroke={strokeColor}
-                strokeDasharray={circ}
-                strokeDashoffset={circ * (1 - pct)}
-              />
-            </svg>
-            <div className="pomo-time">
-              <div className="pomo-time-display" style={{ color: state.running ? strokeColor : "var(--text)" }}>
-                {String(mins).padStart(2, "0")}:{String(secs).padStart(2, "0")}
-              </div>
-              <div className="pomo-mode-label">{state.mode}</div>
+      {/* Mode + elapsed */}
+      <div className="pomo-mode-row">
+        <span className="pomo-mode-pill" style={{ background: isWork ? color + "18" : "var(--bg3)", border: `1px solid ${isWork ? color + "44" : "var(--rule2)"}`, color: isWork ? color : "var(--text3)" }}>
+          {isWork ? "Work session" : "Break time"}
+        </span>
+        {state.elapsed > 0 && isWork && (
+          <span className="pomo-elapsed">{fmtDuration(state.elapsed)} elapsed</span>
+        )}
+      </div>
+
+      {/* Ring */}
+      <div className="pomo-ring-wrap">
+        <div className="pomo-ring">
+          <svg viewBox="0 0 180 180">
+            <circle className="pomo-ring-bg" cx="90" cy="90" r={radius} />
+            <circle className="pomo-ring-progress" cx="90" cy="90" r={radius}
+              stroke={ringColor} strokeDasharray={circ} strokeDashoffset={circ * (1 - pct)}
+              style={{ transition: "stroke-dashoffset 1s linear, stroke 0.4s" }} />
+          </svg>
+          <div className="pomo-time">
+            <div className="pomo-time-display" style={{ color: state.running ? ringColor : "var(--text)" }}>
+              {String(mins).padStart(2, "0")}:{String(secs).padStart(2, "0")}
+            </div>
+            <div className="pomo-mode-label" style={{ color: "var(--text3)" }}>
+              {state.running ? (isWork ? "focusing" : "resting") : state.elapsed > 0 ? "paused" : "ready"}
             </div>
           </div>
-          <div className="pomo-controls">
-            <button className={`pomo-btn${state.running ? "" : " start"}`} onClick={toggle}>
-              {state.running ? <I.pause/> : <I.play/>}
-            </button>
-            <button className="pomo-btn" onClick={resetTimer}><I.reset/></button>
-          </div>
         </div>
       </div>
 
-      {recentSessions.length > 0 && (
+      {/* Controls - Reset | Start/Pause | Skip */}
+      <div className="pomo-controls">
+        <button className="pomo-btn pomo-btn-secondary" onClick={reset} title="Reset (saves partial session)">
+          <I.reset /><span>Reset</span>
+        </button>
+        <button className="pomo-btn pomo-btn-primary" onClick={startPause}
+          style={{ background: state.running ? "transparent" : color, borderColor: color, color: state.running ? color : "var(--bg)" }}>
+          {state.running ? <I.pause /> : <I.play />}
+          <span>{state.running ? "Pause" : state.elapsed > 0 ? "Resume" : "Start"}</span>
+        </button>
+        <button className="pomo-btn pomo-btn-secondary" onClick={skip} title={`Skip to ${isWork ? "break" : "work"}`}>
+          <I.skip /><span>Skip</span>
+        </button>
+      </div>
+
+      {/* Timer settings */}
+      <div className="pomo-settings-row">
+        <button className="pomo-settings-toggle" onClick={() => setShowSettings(s => !s)}>
+          Timer lengths {showSettings ? "▲" : "▼"}
+        </button>
+        {showSettings && (
+          <div className="pomo-settings">
+            <label><span>Work</span>
+              <input type="number" min={1} max={90} value={state.workMins}
+                onChange={e => setState(s => ({ ...s, workMins: +e.target.value, ...(!s.running && s.mode === "work" ? { secondsLeft: +e.target.value * 60 } : {}) }))} />
+              <span>min</span>
+            </label>
+            <label><span>Break</span>
+              <input type="number" min={1} max={30} value={state.breakMins}
+                onChange={e => setState(s => ({ ...s, breakMins: +e.target.value, ...(!s.running && s.mode === "break" ? { secondsLeft: +e.target.value * 60 } : {}) }))} />
+              <span>min</span>
+            </label>
+          </div>
+        )}
+      </div>
+
+      {/* Session log */}
+      {recent.length > 0 && (
         <div className="session-log">
-          <div className="pomo-label">Recent sessions</div>
-          {recentSessions.map((s, i) => (
+          <div className="session-log-head">Session history</div>
+          {recent.map((s, i) => (
             <div key={i} className="session-log-item">
-              <span>{new Date(s.date).toLocaleDateString()}</span>
+              <span className="session-log-date">{new Date(s.date).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}</span>
+              <div className="session-log-bar-wrap"><div className="session-log-bar" style={{ width: `${Math.min((s.duration / (25 * 60)) * 100, 100)}%`, background: color }} /></div>
               <span className="session-log-dur">{fmtDuration(s.duration)}</span>
             </div>
           ))}
         </div>
       )}
-    </>
+    </div>
   );
 }
 
@@ -686,40 +781,42 @@ function GitHubSync({
 
 // ── COMMAND PALETTE ───────────────────────────────────────────
 const ACTIONS = [
-  { id: "new",        label: "New project",          view: null as View | null, icon: "plus" },
-  { id: "dashboard",  label: "Go to Dashboard",       view: "dashboard" as View, icon: "grid" },
-  { id: "kanban",     label: "Go to Kanban",          view: "kanban" as View,    icon: "kanban" },
-  { id: "timeline",   label: "Go to Timeline",        view: "timeline" as View,  icon: "timeline" },
-  { id: "tags",       label: "Go to Tags",            view: "tags" as View,      icon: "tag" },
-  { id: "dependencies",label:"Go to Dependencies",   view: "dependencies" as View, icon: "deps" },
-  { id: "review",     label: "Go to Weekly Review",   view: "review" as View,    icon: "review" },
-  { id: "ai",         label: "Go to AI Advisor",      view: "ai" as View,        icon: "ai" },
-  { id: "settings",   label: "Go to Settings",        view: "settings" as View,  icon: "settings" },
+  { id: "new",         label: "New project",            view: null as View | null, icon: "plus" },
+  { id: "dashboard",   label: "Go to Dashboard",         view: "dashboard" as View, icon: "grid" },
+  { id: "kanban",      label: "Go to Kanban",            view: "kanban" as View,    icon: "kanban" },
+  { id: "timeline",    label: "Go to Timeline",          view: "timeline" as View,  icon: "timeline" },
+  { id: "tags",        label: "Go to Tags",              view: "tags" as View,      icon: "tag" },
+  { id: "dependencies",label: "Go to Dependencies",      view: "dependencies" as View, icon: "deps" },
+  { id: "review",      label: "Go to Weekly Review",     view: "review" as View,    icon: "review" },
+  { id: "ai",          label: "Go to AI Advisor",        view: "ai" as View,        icon: "ai" },
+  { id: "archive",     label: "Go to Archive",           view: "archive" as View,   icon: "archive" },
+  { id: "settings",    label: "Go to Settings",          view: "settings" as View,  icon: "settings" },
 ];
 
 function CommandPalette({
   projects, query, selected, onQueryChange, onSelectedChange,
-  onAction, onProjectOpen, onClose,
+  onAction, onProjectOpen, onTaskOpen, onClose,
 }: {
   projects: Project[]; query: string; selected: number;
   onQueryChange: (q: string) => void; onSelectedChange: (i: number) => void;
   onAction: (id: string, view: View | null) => void;
-  onProjectOpen: (id: string) => void; onClose: () => void;
+  onProjectOpen: (id: string) => void;
+  onTaskOpen: (projectId: string) => void;
+  onClose: () => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
-
   useEffect(() => { inputRef.current?.focus(); }, []);
-
   const q = query.toLowerCase().trim();
 
   const matchedActions = ACTIONS.filter(a => !q || a.label.toLowerCase().includes(q));
   const matchedProjects = projects.filter(p =>
-    !q || p.name.toLowerCase().includes(q) ||
-    p.track.toLowerCase().includes(q) ||
-    p.tags.some(t => t.includes(q))
-  ).slice(0, 8);
+    !q || p.name.toLowerCase().includes(q) || p.track.toLowerCase().includes(q) || p.tags.some(t => t.includes(q))
+  ).slice(0, 6);
+  const matchedTasks: { project: Project; task: Task }[] = q.length >= 2
+    ? projects.flatMap(p => p.tasks.filter(t => t.text.toLowerCase().includes(q) || t.note.toLowerCase().includes(q)).slice(0, 2).map(task => ({ project: p, task }))).slice(0, 5)
+    : [];
 
-  const totalItems = matchedActions.length + matchedProjects.length;
+  const totalItems = matchedActions.length + matchedProjects.length + matchedTasks.length;
 
   const highlight = (text: string) => {
     if (!q) return <>{text}</>;
@@ -734,27 +831,23 @@ function CommandPalette({
       if (e.key === "ArrowUp")   { e.preventDefault(); onSelectedChange(Math.max(selected - 1, 0)); }
       if (e.key === "Enter") {
         e.preventDefault();
-        if (selected < matchedActions.length) {
-          const action = matchedActions[selected];
-          onAction(action.id, action.view);
-        } else {
-          const proj = matchedProjects[selected - matchedActions.length];
-          if (proj) onProjectOpen(proj.id);
-        }
+        const aLen = matchedActions.length, pLen = matchedProjects.length;
+        if (selected < aLen)          { onAction(matchedActions[selected].id, matchedActions[selected].view); }
+        else if (selected < aLen+pLen){ onProjectOpen(matchedProjects[selected - aLen].id); }
+        else { const t = matchedTasks[selected - aLen - pLen]; if (t) onTaskOpen(t.project.id); }
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [selected, matchedActions, matchedProjects, totalItems]);
+  }, [selected, matchedActions, matchedProjects, matchedTasks, totalItems]);
 
   const IconForId = (id: string) => {
     const map: Record<string, () => React.ReactElement> = {
       plus: I.plus, grid: I.grid, kanban: I.kanban, timeline: I.timeline,
       tag: I.tag, deps: I.deps, review: I.review, ai: I.ai,
-      settings: I.settings, focus: I.focus,
+      settings: I.settings, focus: I.focus, archive: I.archive,
     };
-    const Comp = map[id];
-    return Comp ? <Comp /> : <I.grid />;
+    const Comp = map[id]; return Comp ? <Comp /> : <I.grid />;
   };
 
   return (
@@ -762,51 +855,56 @@ function CommandPalette({
       <div className="cmd-box" onClick={e => e.stopPropagation()}>
         <div className="cmd-input-row">
           <span className="cmd-icon"><I.search /></span>
-          <input
-            ref={inputRef}
-            className="cmd-input"
-            placeholder="Search projects, jump to a view, run an action…"
-            value={query}
-            onChange={e => { onQueryChange(e.target.value); onSelectedChange(0); }}
-          />
+          <input ref={inputRef} className="cmd-input"
+            placeholder="Search projects, tasks, notes, tags…"
+            value={query} onChange={e => { onQueryChange(e.target.value); onSelectedChange(0); }} />
           <span className="cmd-hint"><kbd>esc</kbd></span>
         </div>
         <div className="cmd-results">
-          {matchedActions.length > 0 && (
-            <>
-              <div className="cmd-section-label">Actions</div>
-              {matchedActions.map((a, i) => (
-                <div key={a.id}
-                  className={`cmd-item${i === selected ? " selected" : ""}`}
-                  onClick={() => onAction(a.id, a.view)}
-                  onMouseEnter={() => onSelectedChange(i)}>
-                  <span className="cmd-item-icon">{IconForId(a.icon)}</span>
-                  <span className="cmd-item-label">{highlight(a.label)}</span>
+          {matchedActions.length > 0 && (<>
+            <div className="cmd-section-label">Actions</div>
+            {matchedActions.map((a, i) => (
+              <div key={a.id} className={`cmd-item${i === selected ? " selected" : ""}`}
+                onClick={() => onAction(a.id, a.view)} onMouseEnter={() => onSelectedChange(i)}>
+                <span className="cmd-item-icon">{IconForId(a.icon)}</span>
+                <span className="cmd-item-label">{highlight(a.label)}</span>
+              </div>
+            ))}
+          </>)}
+          {matchedProjects.length > 0 && (<>
+            <div className="cmd-section-label">Projects</div>
+            {matchedProjects.map((p, i) => {
+              const gi = matchedActions.length + i;
+              const sc = scoreProject(p, projects); const color = projectColor(p);
+              return (
+                <div key={p.id} className={`cmd-item${gi === selected ? " selected" : ""}`}
+                  onClick={() => onProjectOpen(p.id)} onMouseEnter={() => onSelectedChange(gi)}>
+                  <span className="cmd-item-dot" style={{ background: color }} />
+                  <span className="cmd-item-label">{highlight(p.name)}</span>
+                  <span className="cmd-item-meta">{p.track}</span>
+                  <span className="cmd-item-score" style={{ color }}>{sc.score}%</span>
                 </div>
-              ))}
-            </>
-          )}
-          {matchedProjects.length > 0 && (
-            <>
-              <div className="cmd-section-label">Projects</div>
-              {matchedProjects.map((p, i) => {
-                const globalIdx = matchedActions.length + i;
-                const sc = scoreProject(p);
-                const color = projectColor(p);
-                return (
-                  <div key={p.id}
-                    className={`cmd-item${globalIdx === selected ? " selected" : ""}`}
-                    onClick={() => onProjectOpen(p.id)}
-                    onMouseEnter={() => onSelectedChange(globalIdx)}>
-                    <span className="cmd-item-dot" style={{ background: color }} />
-                    <span className="cmd-item-label">{highlight(p.name)}</span>
-                    <span className="cmd-item-meta">{p.track}</span>
-                    <span className="cmd-item-score" style={{ color }}>{sc.score}%</span>
+              );
+            })}
+          </>)}
+          {matchedTasks.length > 0 && (<>
+            <div className="cmd-section-label">Tasks</div>
+            {matchedTasks.map(({ project: p, task: t }, i) => {
+              const gi = matchedActions.length + matchedProjects.length + i;
+              const color = projectColor(p);
+              return (
+                <div key={t.id} className={`cmd-item${gi === selected ? " selected" : ""}`}
+                  onClick={() => onTaskOpen(p.id)} onMouseEnter={() => onSelectedChange(gi)}>
+                  <span className="cmd-item-dot" style={{ background: color }} />
+                  <div style={{ display: "flex", flexDirection: "column", flex: 1, minWidth: 0 }}>
+                    <span className="cmd-item-label" style={{ textDecoration: t.done ? "line-through" : "none" }}>{highlight(t.text)}</span>
+                    <span className="cmd-item-meta" style={{ fontSize: 10 }}>{p.name}</span>
                   </div>
-                );
-              })}
-            </>
-          )}
+                  <span className="cmd-item-meta" style={{ flexShrink: 0 }}>{t.priority}</span>
+                </div>
+              );
+            })}
+          </>)}
           {totalItems === 0 && <div className="cmd-empty">No results for "{query}"</div>}
         </div>
         <div className="cmd-footer">
@@ -1075,6 +1173,11 @@ export default function App() {
   const [aiInput, setAiInput]         = useState("");
   const [aiLoading, setAiLoading]     = useState(false);
   const [ollamaStatus, setOllamaStatus] = useState<{ running: boolean; models: string[]; checked: boolean }>({ running: false, models: [], checked: false });
+  // ── Auto-updater state ─────────────────────────────────────
+  const [updateInfo, setUpdateInfo] = useState<{ version: string; state: "available"|"downloading"|"ready"|"error"; percent?: number; error?: string } | null>(null);
+  // ── Task drag state ────────────────────────────────────────
+  const [dragTaskId, setDragTaskId]   = useState<string | null>(null);
+  const [dragOverTaskId, setDragOverTaskId] = useState<string | null>(null);
   const [nameInput, setNameInput]     = useState("");
   const [cmdOpen, setCmdOpen]         = useState(false);
   const [cmdQuery, setCmdQuery]       = useState("");
@@ -1083,11 +1186,22 @@ export default function App() {
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [showGitHub, setShowGitHub]   = useState(false);
   const [ghTokenDraft, setGhTokenDraft] = useState("");
+  const [editingProject, setEditingProject] = useState(false);
+  const [editDraft, setEditDraft]     = useState<Partial<Project>>({});
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const [editingTaskText, setEditingTaskText] = useState("");
+  const [addingTaskPid, setAddingTaskPid] = useState<string | null>(null);
+  const [newTaskText, setNewTaskText] = useState("");
+  const [addingColumnName, setAddingColumnName] = useState("");
+  const [showAddColumn, setShowAddColumn] = useState(false);
+  const [showBlockerSelect, setShowBlockerSelect] = useState<string | null>(null); // project id
 
   const { msg: toastMsg, show: toastShow, toast } = useToast();
   const { text: brandText, done: brandDone } = useTypewriter("Meridian");
   const fileRef  = useRef<HTMLInputElement>(null);
   const chatRef  = useRef<HTMLDivElement>(null);
+  const undoRef  = useRef<(() => void) | null>(null);
+  const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const theme: ThemeSettings = Object.assign(
@@ -1132,6 +1246,73 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings.digestEnabled]);
 
+  // ── Auto-updater listeners ─────────────────────────────────
+  useEffect(() => {
+    const el = window.electron;
+    if (!el?.updater) return;
+    const cleanups = [
+      el.updater.on("update-available",       (d) => { const info = d as { version: string }; setUpdateInfo({ version: info.version, state: "available" }); }),
+      el.updater.on("update-download-progress",(d) => { const info = d as { percent: number }; setUpdateInfo(u => u ? { ...u, state: "downloading", percent: info.percent } : null); }),
+      el.updater.on("update-downloaded",       (d) => { const info = d as { version: string }; setUpdateInfo(u => u ? { ...u, state: "ready" } : { version: info.version, state: "ready" }); }),
+      el.updater.on("update-error",            (d) => { const msg = d as string; setUpdateInfo(u => u ? { ...u, state: "error", error: msg } : null); }),
+    ];
+    return () => cleanups.forEach(c => c?.());
+  }, []);
+
+  // ── safeStorage - load encrypted GitHub token on mount ────
+  useEffect(() => {
+    const load = async () => {
+      const el = window.electron;
+      if (!el?.secrets) return;
+      const available = await el.secrets.isAvailable();
+      if (!available) return;
+      // If we have an encrypted token in settings, decrypt it
+      const encrypted = settings.gitHubToken;
+      if (encrypted?.startsWith("enc:")) {
+        const { plaintext, error } = await el.secrets.decrypt(encrypted.slice(4));
+        if (!error && plaintext) patchSettings({ gitHubToken: encrypted }); // keep encrypted in settings
+      }
+    };
+    load();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const saveGitHubToken = async (token: string) => {
+    const el = window.electron;
+    if (el?.secrets) {
+      const available = await el.secrets.isAvailable();
+      if (available) {
+        const { ciphertext, error } = await el.secrets.encrypt(token);
+        if (!error) { patchSettings({ gitHubToken: "enc:" + ciphertext }); return; }
+      }
+    }
+    patchSettings({ gitHubToken: token }); // fallback: plain localStorage
+  };
+
+  const getGitHubToken = async (): Promise<string> => {
+    const raw = settings.gitHubToken;
+    if (!raw?.startsWith("enc:")) return raw ?? "";
+    const el = window.electron;
+    if (!el?.secrets) return "";
+    const { plaintext } = await el.secrets.decrypt(raw.slice(4));
+    return plaintext ?? "";
+  };
+
+  // ── Task drag-to-reorder ───────────────────────────────────
+  const onTaskDragStart = (taskId: string) => setDragTaskId(taskId);
+  const onTaskDragOver  = (e: React.DragEvent, taskId: string) => { e.preventDefault(); setDragOverTaskId(taskId); };
+  const onTaskDrop      = (projectId: string, dropTaskId: string) => {
+    if (!dragTaskId || dragTaskId === dropTaskId) { setDragTaskId(null); setDragOverTaskId(null); return; }
+    const p = projects.find(x => x.id === projectId); if (!p) return;
+    const tasks = [...p.tasks];
+    const fromIdx = tasks.findIndex(t => t.id === dragTaskId);
+    const toIdx   = tasks.findIndex(t => t.id === dropTaskId);
+    if (fromIdx === -1 || toIdx === -1) return;
+    tasks.splice(toIdx, 0, tasks.splice(fromIdx, 1)[0]);
+    updateProject(projectId, { tasks });
+    setDragTaskId(null); setDragOverTaskId(null);
+  };
+
   const showReviewBanner = settings.onboarded && !reviewDismissed &&
     shouldPromptReview(settings.lastReviewPrompt) && projects.length > 0;
 
@@ -1161,7 +1342,8 @@ export default function App() {
     }));
   };
 
-  const openDetail = (id: string) => { setSelectedId(id); setView("detail"); touchProject(id); };
+  const openDetail = (id: string) => { setSelectedId(id); setView("detail"); setEditingProject(false); touchProject(id); };
+  const openEdit   = (p: Project) => { setEditDraft({ name: p.name, desc: p.desc, track: p.track, status: p.status, daysLeft: p.daysLeft, impact: p.impact, effort: p.effort, energy: p.energy, confidence: p.confidence, tags: [...p.tags] }); setEditingProject(true); };
 
   // Projects
   const addProject = () => {
@@ -1184,24 +1366,56 @@ export default function App() {
   };
 
   const removeProject = (id: string) => {
+    const snapshot = projects;
     const next = projects.filter(p => p.id !== id)
       .map(p => ({ ...p, blockedBy: (p.blockedBy ?? []).filter(b => b !== id) }));
-    saveProjects(next); setSelectedId(next[0]?.id ?? ""); setView("dashboard"); toast("Project removed.");
+    saveProjects(next); setSelectedId(next[0]?.id ?? ""); setView("dashboard");
+    toast("Project removed - undo?");
+    undoRef.current = () => { saveProjects(snapshot); setSelectedId(id); setView("detail"); };
+    if (undoTimer.current) clearTimeout(undoTimer.current);
+    undoTimer.current = setTimeout(() => { undoRef.current = null; }, 5000);
   };
 
   const updateProject = (id: string, patch: Partial<Project>) =>
     saveProjects(projects.map(p => p.id === id ? { ...p, ...patch } : p));
 
-  // Tasks
-  const addTask = () => {
-    if (!sel) return;
-    const text = window.prompt("Task description:");
-    if (!text?.trim()) return;
-    updateProject(sel.id, {
-      tasks: [...sel.tasks, { id: uid(), text: text.trim(), done: false, priority: "med" as TaskPriority, due: "", note: "", subtasks: [], expanded: false }],
+  const addTask = (pid: string) => {
+    setAddingTaskPid(pid);
+    setNewTaskText("");
+  };
+
+  const commitAddTask = (pid: string) => {
+    if (!newTaskText.trim()) { setAddingTaskPid(null); return; }
+    const p = projects.find(x => x.id === pid); if (!p) return;
+    updateProject(pid, {
+      tasks: [...p.tasks, { id: uid(), text: newTaskText.trim(), done: false, priority: "med" as TaskPriority, due: "", note: "", subtasks: [], expanded: false }],
       lastTouched: new Date().toISOString(),
     });
-    toast("Task added.");
+    setNewTaskText(""); setAddingTaskPid(null);
+  };
+
+  const deleteTask = (pid: string, tid: string) => {
+    const p = projects.find(x => x.id === pid); if (!p) return;
+    // Undo-able delete
+    const snapshot = p.tasks;
+    updateProject(pid, { tasks: p.tasks.filter(t => t.id !== tid) });
+    toast("Task removed - undo?");
+    // We store the undo action in a ref so it can be triggered
+    undoRef.current = () => updateProject(pid, { tasks: snapshot });
+    if (undoTimer.current) clearTimeout(undoTimer.current);
+    undoTimer.current = setTimeout(() => { undoRef.current = null; }, 5000);
+  };
+
+  const commitEditTask = (pid: string, tid: string) => {
+    if (!editingTaskText.trim()) { setEditingTaskId(null); return; }
+    const p = projects.find(x => x.id === pid); if (!p) return;
+    updateProject(pid, { tasks: p.tasks.map(t => t.id === tid ? { ...t, text: editingTaskText.trim() } : t) });
+    setEditingTaskId(null);
+  };
+
+  const updateTaskPriority = (pid: string, tid: string, priority: TaskPriority) => {
+    const p = projects.find(x => x.id === pid); if (!p) return;
+    updateProject(pid, { tasks: p.tasks.map(t => t.id === tid ? { ...t, priority } : t) });
   };
 
   const toggleTask = (pid: string, tid: string) =>
@@ -1223,10 +1437,11 @@ export default function App() {
     }));
 
   // Kanban
-  const addColumn = () => {
-    const name = window.prompt("Column name:"); if (!name?.trim()) return;
-    const col: KanbanColumn = { id: uid(), name: name.trim(), color: COL_COLORS[columns.length % COL_COLORS.length], wipLimit: null, order: columns.length };
-    saveColumns([...columns, col]); toast("Column added.");
+  const addColumn = () => { setShowAddColumn(true); setAddingColumnName(""); };
+  const commitAddColumn = () => {
+    if (!addingColumnName.trim()) { setShowAddColumn(false); return; }
+    const col: KanbanColumn = { id: uid(), name: addingColumnName.trim(), color: COL_COLORS[columns.length % COL_COLORS.length], wipLimit: null, order: columns.length };
+    saveColumns([...columns, col]); setShowAddColumn(false); setAddingColumnName(""); toast("Column added.");
   };
   const updateColumn = (id: string, patch: Partial<KanbanColumn>) => saveColumns(columns.map(c => c.id === id ? { ...c, ...patch } : c));
   const removeColumn = (id: string) => {
@@ -1243,16 +1458,14 @@ export default function App() {
   };
 
   // Dependencies
-  const addBlocker = (projectId: string) => {
-    const options = projects.filter(p => p.id !== projectId && !(projects.find(x => x.id === projectId)?.blockedBy ?? []).includes(p.id)).map(p => p.name).join("\n");
-    const input = window.prompt("Which project blocks this one?\n\n" + options + "\n\nEnter project name:");
-    if (!input?.trim()) return;
-    const blocker = projects.find(p => p.name.toLowerCase().includes(input.toLowerCase().trim()) && p.id !== projectId);
-    if (!blocker) { toast("Project not found."); return; }
+  const addBlocker = (projectId: string) => setShowBlockerSelect(projectId);
+  const commitAddBlocker = (projectId: string, blockerId: string) => {
     const current = projects.find(p => p.id === projectId);
-    if ((current?.blockedBy ?? []).includes(blocker.id)) { toast("Already linked."); return; }
-    updateProject(projectId, { blockedBy: [...(current?.blockedBy ?? []), blocker.id] });
-    toast('"' + current?.name + '" now blocked by "' + blocker.name + '"');
+    if (!blockerId || (current?.blockedBy ?? []).includes(blockerId)) { setShowBlockerSelect(null); return; }
+    const blocker = projects.find(p => p.id === blockerId);
+    updateProject(projectId, { blockedBy: [...(current?.blockedBy ?? []), blockerId] });
+    toast('"' + current?.name + '" now blocked by "' + blocker?.name + '"');
+    setShowBlockerSelect(null);
   };
   const removeBlocker = (projectId: string, blockerId: string) => {
     const current = projects.find(p => p.id === projectId);
@@ -1330,31 +1543,69 @@ export default function App() {
   };
 
   const avg     = Math.round(sorted.reduce((a, p) => a + scoreProject(p, projects).score, 0) / Math.max(sorted.length, 1));
-  const overdue = sorted.filter(p => p.daysLeft < 0 && p.status !== "shipped").length;
+  const overdue = sorted.filter(p => (p.deadlineDate ? Math.round((new Date(p.deadlineDate).setHours(0,0,0,0) - new Date().setHours(0,0,0,0)) / 86400000) : p.daysLeft) < 0 && p.status !== "shipped").length;
   const shipped_ = sorted.filter(p => p.status === "shipped").length;
   const top     = sorted[0];
+  const hour    = new Date().getHours();
+  const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
   const priColor = (pri: string, color: string) => ({ high: color, med: "var(--text2)", low: "var(--text3)" }[pri] ?? "var(--text3)");
 
   const renderTasks = (project: Project, color: string) => (
     <>
-      {project.tasks.length === 0 && <div className="task-empty">No tasks yet - add one above.</div>}
+      {project.tasks.length === 0 && addingTaskPid !== project.id && (
+        <div className="task-empty">No tasks yet - add one above.</div>
+      )}
       {project.tasks.map(task => (
-        <div key={task.id} className={"task-item" + (task.expanded ? " expanded" : "")}>
+        <div key={task.id}
+          className={"task-item" + (task.expanded ? " expanded" : "") + (dragOverTaskId === task.id ? " drag-over" : "")}
+          draggable
+          onDragStart={() => onTaskDragStart(task.id)}
+          onDragOver={e => onTaskDragOver(e, task.id)}
+          onDrop={() => onTaskDrop(project.id, task.id)}
+          onDragEnd={() => { setDragTaskId(null); setDragOverTaskId(null); }}>
+          {/* Drag handle */}
+          <div className="task-drag-handle" title="Drag to reorder">
+            <svg viewBox="0 0 16 16" fill="none" width="10" height="10">
+              <circle cx="5" cy="4" r="1.2" fill="currentColor"/>
+              <circle cx="5" cy="8" r="1.2" fill="currentColor"/>
+              <circle cx="5" cy="12" r="1.2" fill="currentColor"/>
+              <circle cx="10" cy="4" r="1.2" fill="currentColor"/>
+              <circle cx="10" cy="8" r="1.2" fill="currentColor"/>
+              <circle cx="10" cy="12" r="1.2" fill="currentColor"/>
+            </svg>
+          </div>
           <div className={"task-cb" + (task.done ? " done" : "")}
             style={task.done ? { background: color, borderColor: color } : {}}
             onClick={e => { e.stopPropagation(); toggleTask(project.id, task.id); }}>
             {task.done && I.check(9)}
           </div>
-          <div className="task-body" onClick={() => toggleExpanded(project.id, task.id)}>
-            <div className={"task-text" + (task.done ? " done" : "")}>{task.text}</div>
+          <div className="task-body" onClick={() => { if (editingTaskId !== task.id) toggleExpanded(project.id, task.id); }}>
+            {editingTaskId === task.id ? (
+              <input className="task-inline-edit" autoFocus value={editingTaskText}
+                onChange={e => setEditingTaskText(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") commitEditTask(project.id, task.id); if (e.key === "Escape") setEditingTaskId(null); }}
+                onBlur={() => commitEditTask(project.id, task.id)}
+                onClick={e => e.stopPropagation()} />
+            ) : (
+              <div className={"task-text" + (task.done ? " done" : "")}
+                onDoubleClick={e => { e.stopPropagation(); setEditingTaskId(task.id); setEditingTaskText(task.text); }}>
+                {task.text}
+              </div>
+            )}
             <div className="task-row">
-              <span className="task-pri" style={{ color: priColor(task.priority, color) }}>{task.priority}</span>
+              {(["high","med","low"] as TaskPriority[]).map(pri => (
+                <span key={pri} className="task-pri"
+                  style={{ color: task.priority === pri ? priColor(pri, color) : "var(--text4)", fontWeight: task.priority === pri ? 600 : 400, cursor: "pointer", marginRight: 4 }}
+                  onClick={e => { e.stopPropagation(); updateTaskPriority(project.id, task.id, pri); }}>
+                  {pri}
+                </span>
+              ))}
               {task.due && <span className="task-due">{task.due}</span>}
+              <button className="task-delete-btn" onClick={e => { e.stopPropagation(); deleteTask(project.id, task.id); }} title="Delete task">×</button>
             </div>
             <div className="task-expand">
               {task.subtasks.map(s => (
-                <div key={s.id} className="subtask"
-                  onClick={e => { e.stopPropagation(); toggleSubtask(project.id, task.id, s.id); }}>
+                <div key={s.id} className="subtask" onClick={e => { e.stopPropagation(); toggleSubtask(project.id, task.id, s.id); }}>
                   <div className={"sub-cb" + (s.done ? " done" : "")} style={s.done ? { background: color, borderColor: color } : {}}>
                     {s.done && <I.checkSm />}
                   </div>
@@ -1366,6 +1617,15 @@ export default function App() {
           </div>
         </div>
       ))}
+      {addingTaskPid === project.id && (
+        <div className="task-add-inline">
+          <input className="task-inline-edit" autoFocus placeholder="What needs to happen?"
+            value={newTaskText} onChange={e => setNewTaskText(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter") commitAddTask(project.id); if (e.key === "Escape") setAddingTaskPid(null); }}
+            onBlur={() => commitAddTask(project.id)} />
+          <span style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--text4)", paddingLeft: 8 }}>Enter to save · Esc to cancel</span>
+        </div>
+      )}
     </>
   );
 
@@ -1376,7 +1636,14 @@ export default function App() {
     return (
       <>
         <div id="mc"><div className="mch" /><div className="mcv" /></div>
-        <div className={"toast" + (toastShow ? " show" : "")}>{toastMsg}</div>
+        <div className={"toast" + (toastShow ? " show" : "")}>
+        <span>{toastMsg}</span>
+        {undoRef.current && (
+          <button className="toast-undo" onClick={() => { undoRef.current?.(); undoRef.current = null; toast("Undone."); }}>
+            Undo
+          </button>
+        )}
+      </div>
         <div className="focus-mode">
           <div className="focus-topbar">
             <div className="focus-topbar-left">
@@ -1399,27 +1666,44 @@ export default function App() {
           <div className="focus-body">
             <div className="focus-tasks-panel">
               <div className="focus-tasks-header">
-                <div className="focus-tasks-title">{focusProj.name}</div>
-                <div className="focus-tasks-sub">{focusProj.desc}</div>
+                <div>
+                  <div className="focus-tasks-title" style={{ color }}>{focusProj.name}</div>
+                  <div className="focus-tasks-sub">{focusProj.desc}</div>
+                  <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+                    <span className="pill" style={{ color, borderColor: color + "44", background: color + "10" }}>{sc.score}% - {sc.stage}</span>
+                    <span className={"pill " + (livedays(focusProj) < 0 ? "pill-red" : "pill-dim")}>{fmtDays(livedays(focusProj))}</span>
+                    <span className="pill pill-dim">{focusProj.track || "-"}</span>
+                    {sc.decayPenalty > 0 && <span className="pill" style={{ color: "#ef4444", borderColor: "rgba(239,68,68,0.3)", background: "rgba(239,68,68,0.07)" }}>↓ stale -{sc.decayPenalty}pts</span>}
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 8, alignItems: "flex-start", flexWrap: "wrap" }}>
+                  <div className="focus-mini-score">
+                    <div className="focus-mini-score-val" style={{ color }}>{sc.score}</div>
+                    <div className="focus-mini-score-lbl">score</div>
+                  </div>
+                  <div className="focus-mini-score">
+                    <div className="focus-mini-score-val">{taskCompletion(focusProj)}%</div>
+                    <div className="focus-mini-score-lbl">done</div>
+                  </div>
+                </div>
               </div>
+
               <div className="focus-tasks-list">
                 <div className="tasks-head">
-                  <div className="tasks-title">Tasks</div>
-                  <button className="add-task-btn" style={{ color, borderColor: "rgba(255,255,255,0.15)" }}
-                    onClick={() => {
-                      const text = window.prompt("Task description:");
-                      if (!text?.trim()) return;
-                      updateProject(focusProj.id, { tasks: [...focusProj.tasks, { id: uid(), text: text.trim(), done: false, priority: "med", due: "", note: "", subtasks: [], expanded: false }], lastTouched: new Date().toISOString() });
-                    }}>
+                  <div className="tasks-title">Tasks <span style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--text3)", marginLeft: 6 }}>
+                    {focusProj.tasks.filter(t => t.done).length}/{focusProj.tasks.length}
+                  </span></div>
+                  <button className="add-task-btn" style={{ color, borderColor: color + "33" }}
+                    onClick={() => addTask(focusProj.id)}>
                     <I.plus />Add task
                   </button>
                 </div>
                 {renderTasks(focusProj, color)}
               </div>
             </div>
+
             <div className="focus-pomo-panel">
               <div className="focus-pomo-inner">
-                <div className="pomo-label">Pomodoro timer</div>
                 <Pomodoro project={focusProj} color={color} onSessionComplete={handleSessionComplete} />
               </div>
             </div>
@@ -1432,7 +1716,14 @@ export default function App() {
   return (
     <>
       <div id="mc"><div className="mch" /><div className="mcv" /></div>
-      <div className={"toast" + (toastShow ? " show" : "")}>{toastMsg}</div>
+      <div className={"toast" + (toastShow ? " show" : "")}>
+        <span>{toastMsg}</span>
+        {undoRef.current && (
+          <button className="toast-undo" onClick={() => { undoRef.current?.(); undoRef.current = null; toast("Undone."); }}>
+            Undo
+          </button>
+        )}
+      </div>
 
       {cmdOpen && (
         <CommandPalette
@@ -1440,6 +1731,7 @@ export default function App() {
           onQueryChange={setCmdQuery} onSelectedChange={setCmdSelected}
           onAction={(id, v) => { if (id === "new") { setDrawerOpen(true); setView("dashboard"); } else if (v) setView(v); setCmdOpen(false); }}
           onProjectOpen={id => { openDetail(id); setCmdOpen(false); }}
+          onTaskOpen={id => { openDetail(id); setCmdOpen(false); }}
           onClose={() => setCmdOpen(false)}
         />
       )}
@@ -1506,6 +1798,7 @@ export default function App() {
                 ["tags",         "Tags",           I.tag],
                 ["dependencies", "Dependencies",   I.deps],
                 ["review",       "Weekly Review",  I.review],
+                ["archive",      "Archive",        I.archive],
                 ["ai",           "AI Advisor",     I.ai],
                 ["settings",     "Settings",       I.settings],
               ] as [View, string, () => React.ReactElement][]).map(([v, label, Icon]) => (
@@ -1513,6 +1806,14 @@ export default function App() {
                   <Icon />{label}
                   {v === "review" && showReviewBanner && (
                     <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--accent)", marginLeft: "auto", flexShrink: 0 }} />
+                  )}
+                  {v === "archive" && sorted.filter(p => p.status === "shipped").length > 0 && (
+                    <span style={{ fontFamily: "var(--font-mono)", fontSize: 8, color: "var(--text4)", marginLeft: "auto" }}>
+                      {sorted.filter(p => p.status === "shipped").length}
+                    </span>
+                  )}
+                  {v === "settings" && updateInfo?.state === "available" && (
+                    <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#22d3ee", marginLeft: "auto", flexShrink: 0 }} />
                   )}
                 </div>
               ))}
@@ -1555,6 +1856,33 @@ export default function App() {
           </div>
 
           <div className="main">
+              {/* UPDATE NOTIFICATION */}
+              {updateInfo && (
+                <div className={`update-banner update-banner-${updateInfo.state}`}>
+                  {updateInfo.state === "available" && (<>
+                    <span className="update-banner-dot" />
+                    <span>Meridian <strong>{updateInfo.version}</strong> is available</span>
+                    <button className="update-banner-btn" onClick={() => window.electron?.updater.download()}>Download</button>
+                    <button className="update-banner-dismiss" onClick={() => setUpdateInfo(null)}>×</button>
+                  </>)}
+                  {updateInfo.state === "downloading" && (<>
+                    <span className="update-banner-dot downloading" />
+                    <span>Downloading update… {updateInfo.percent ?? 0}%</span>
+                    <div className="update-banner-prog"><div style={{ width: (updateInfo.percent ?? 0) + "%" }} /></div>
+                  </>)}
+                  {updateInfo.state === "ready" && (<>
+                    <span className="update-banner-dot ready" />
+                    <span><strong>{updateInfo.version}</strong> ready to install</span>
+                    <button className="update-banner-btn" onClick={() => window.electron?.updater.install()}>Restart &amp; install</button>
+                    <button className="update-banner-dismiss" onClick={() => setUpdateInfo(null)}>×</button>
+                  </>)}
+                  {updateInfo.state === "error" && (<>
+                    <span>Update failed: {updateInfo.error}</span>
+                    <button className="update-banner-dismiss" onClick={() => setUpdateInfo(null)}>×</button>
+                  </>)}
+                </div>
+              )}
+
             {showReviewBanner && !showReview && (
               <div className="review-prompt-banner" onClick={() => setShowReview(true)}>
                 <span className="review-prompt-dot" />
@@ -1588,7 +1916,12 @@ export default function App() {
                       <option value="paused">paused</option><option value="shipped">shipped</option>
                     </select>
                   </label>
-                  <label><span className="f-lbl">Days to deadline</span><input className="f-input" type="number" min={0} value={draft.daysLeft} onChange={e => setDraft(d => ({ ...d, daysLeft: Number(e.target.value) }))} /></label>
+                  <label><span className="f-lbl">Deadline</span>
+                    <input className="f-input" type="date"
+                      value={draft.deadlineDate ?? ""}
+                      min={new Date().toISOString().slice(0, 10)}
+                      onChange={e => setDraft(d => ({ ...d, deadlineDate: e.target.value, daysLeft: daysFromDeadline(e.target.value) }))} />
+                  </label>
                   {(["impact", "effort", "energy", "confidence"] as const).map(k => (
                     <label key={k}>
                       <div className="range-head"><span>{k}</span><strong>{draft[k]}</strong></div>
@@ -1610,11 +1943,11 @@ export default function App() {
             {/* DASHBOARD */}
             <div className={"view" + (view === "dashboard" ? " active" : "")}>
               <div className="dash-hero">
-                <div className="dash-greeting">Good evening, <em>{settings.name || "there"}.</em></div>
+                <div className="dash-greeting">{greeting}, <em>{settings.name || "there"}.</em></div>
                 <div className="dash-sub">
                   {sorted.length === 0
                     ? "No projects yet - hit \"+ New project\" to get started."
-                    : (overdue > 0 ? overdue + " overdue - " : "") + sorted.filter(p => p.daysLeft >= 0 && p.daysLeft <= 7 && p.status !== "shipped").length + " urgent this week."
+                    : (overdue > 0 ? overdue + " overdue - " : "") + sorted.filter(p => livedays(p) >= 0 && livedays(p) <= 7 && p.status !== "shipped").length + " urgent this week."
                   }
                 </div>
               </div>
@@ -1665,7 +1998,7 @@ export default function App() {
                           <div className="pc-pills">
                             <span className="pill" style={{ color, borderColor: "rgba(255,255,255,0.14)", background: "rgba(255,255,255,0.04)" }}>{sc.stage}</span>
                             <span className="pill pill-dim">{p.track || "-"}</span>
-                            <span className={"pill " + (p.daysLeft < 0 ? "pill-red" : "pill-dim")}>{fmtDays(p.daysLeft)}</span>
+                            <span className={"pill " + (livedays(p) < 0 ? "pill-red" : "pill-dim")}>{fmtDays(livedays(p))}</span>
                           </div>
                           {sc.decayPenalty > 0 && (
                             <div className="decay-bar-wrap">
@@ -1688,7 +2021,17 @@ export default function App() {
             <div className={"view" + (view === "kanban" ? " active" : "")}>
               <div className="kanban-header">
                 <div className="kanban-title">Kanban Board</div>
-                <button className="t-btn" onClick={addColumn}>+ Add column</button>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  {showAddColumn && (
+                    <input className="f-input" style={{ width: 160, padding: "5px 10px" }}
+                      autoFocus placeholder="Column name…"
+                      value={addingColumnName}
+                      onChange={e => setAddingColumnName(e.target.value)}
+                      onKeyDown={e => { if (e.key === "Enter") commitAddColumn(); if (e.key === "Escape") setShowAddColumn(false); }}
+                      onBlur={commitAddColumn} />
+                  )}
+                  <button className="t-btn" onClick={addColumn}>+ Add column</button>
+                </div>
               </div>
               <div className="kanban-board">
                 {[...columns].sort((a, b) => a.order - b.order).map(col => {
@@ -1734,7 +2077,7 @@ export default function App() {
                               <div className="kanban-card-name">{p.name}</div>
                               <div className="kanban-card-meta">
                                 <span className="pill pill-dim">{p.track || "-"}</span>
-                                <span className={"pill " + (p.daysLeft < 0 ? "pill-red" : "pill-dim")}>{fmtDays(p.daysLeft)}</span>
+                                <span className={"pill " + (livedays(p) < 0 ? "pill-red" : "pill-dim")}>{fmtDays(livedays(p))}</span>
                                 {sc.decayPenalty > 0 && <span style={{ fontSize: 8, color: "#ef4444", fontFamily: "var(--font-mono)" }}>↓{sc.decayPenalty}</span>}
                                 <span className="kanban-card-score" style={{ color }}>{sc.score}%</span>
                               </div>
@@ -1774,7 +2117,19 @@ export default function App() {
                           <div className="dep-proj-header">
                             <div className="dep-proj-dot" style={{ background: color }} />
                             <span className="dep-proj-name">{p.name}</span>
+                            {showBlockerSelect === p.id ? (
+                            <select className="f-input" style={{ fontSize: 10, padding: "2px 6px", height: "auto" }}
+                              autoFocus defaultValue=""
+                              onChange={e => commitAddBlocker(p.id, e.target.value)}
+                              onBlur={() => setShowBlockerSelect(null)}>
+                              <option value="" disabled>Select blocker…</option>
+                              {projects.filter(x => x.id !== p.id && !(p.blockedBy ?? []).includes(x.id)).map(x => (
+                                <option key={x.id} value={x.id}>{x.name}</option>
+                              ))}
+                            </select>
+                          ) : (
                             <button className="dep-add-btn" style={{ width: "auto", margin: 0, padding: "2px 8px" }} onClick={() => addBlocker(p.id)}>+ blocker</button>
+                          )}
                           </div>
                           {blockers.length > 0 ? (
                             <div className="dep-blocker-list">
@@ -1854,7 +2209,7 @@ export default function App() {
                         <div className="detail-desc">{sel.desc}</div>
                         <div className="detail-pills">
                           <span className="pill" style={{ color, borderColor: "rgba(255,255,255,0.14)", background: "rgba(255,255,255,0.04)" }}>{sc.stage}</span>
-                          <span className={"pill " + (sel.daysLeft < 0 ? "pill-red" : "pill-dim")}>{fmtDays(sel.daysLeft)}</span>
+                          <span className={"pill " + (livedays(sel) < 0 ? "pill-red" : "pill-dim")}>{fmtDays(livedays(sel))}</span>
                           <span className="pill pill-dim">{sel.status}</span>
                           {sel.tags.map(t => <span key={t} className="pill pill-dim">{t}</span>)}
                           {sc.decayPenalty > 0 && <span className="pill" style={{ color: "#ef4444", borderColor: "rgba(239,68,68,0.3)", background: "rgba(239,68,68,0.08)" }}>↓ {sc.decayPenalty}pt decay</span>}
@@ -1871,6 +2226,7 @@ export default function App() {
                           <div className="score-breakdown-row total"><span>Total</span><span>{sc.score}%</span></div>
                         </div>
                         <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                          <button className="t-btn" onClick={() => openEdit(sel)}><I.edit /> Edit</button>
                           <button className="t-btn" onClick={() => setFocusProjectId(sel.id)}>Focus mode</button>
                           <button className="t-btn" onClick={() => {
                             const md = projectToMarkdown(sel, sc);
@@ -1882,9 +2238,55 @@ export default function App() {
                         </div>
                       </div>
                     </div>
+
+                    {/* ── Inline edit panel ── */}
+                    {editingProject && (
+                      <div className="edit-panel">
+                        <div className="edit-panel-head">
+                          <span className="edit-panel-title">Edit project</span>
+                          <button className="btn-cancel" onClick={() => setEditingProject(false)}>Cancel</button>
+                        </div>
+                        <div className="comp-grid">
+                          <label><span className="f-lbl">Name</span>
+                            <input className="f-input" value={editDraft.name ?? ""} onChange={e => setEditDraft(d => ({ ...d, name: e.target.value }))} /></label>
+                          <label><span className="f-lbl">Track</span>
+                            <input className="f-input" value={editDraft.track ?? ""} onChange={e => setEditDraft(d => ({ ...d, track: e.target.value }))} placeholder="Frontend, AI, Writing…" /></label>
+                          <label className="span-2"><span className="f-lbl">Description</span>
+                            <textarea className="f-input" value={editDraft.desc ?? ""} onChange={e => setEditDraft(d => ({ ...d, desc: e.target.value }))} /></label>
+                          <label><span className="f-lbl">Status</span>
+                            <select className="f-input" value={editDraft.status ?? "active"} onChange={e => setEditDraft(d => ({ ...d, status: e.target.value as ProjectStatus }))}>
+                              <option value="concept">concept</option><option value="active">active</option>
+                              <option value="paused">paused</option><option value="shipped">shipped</option>
+                            </select>
+                          </label>
+                          <label><span className="f-lbl">Deadline</span>
+                            <input className="f-input" type="date"
+                              value={editDraft.deadlineDate ?? sel.deadlineDate ?? ""}
+                              onChange={e => setEditDraft(d => ({ ...d, deadlineDate: e.target.value, daysLeft: daysFromDeadline(e.target.value) }))} />
+                          </label>
+                          {(["impact","effort","energy","confidence"] as const).map(k => (
+                            <label key={k}>
+                              <div className="range-head"><span>{k}</span><strong>{editDraft[k] ?? sel[k]}</strong></div>
+                              <input type="range" min={1} max={10} value={editDraft[k] ?? sel[k]} onChange={e => setEditDraft(d => ({ ...d, [k]: Number(e.target.value) }))} />
+                            </label>
+                          ))}
+                          <label className="span-2"><span className="f-lbl">Tags</span>
+                            <TagInput tags={editDraft.tags ?? sel.tags} onChange={tags => setEditDraft(d => ({ ...d, tags }))} />
+                          </label>
+                        </div>
+                        <div className="drawer-footer">
+                          <button className="btn-cancel" onClick={() => setEditingProject(false)}>Discard</button>
+                          <button className="btn-save" onClick={() => {
+                            updateProject(sel.id, { ...editDraft, lastTouched: new Date().toISOString() });
+                            setEditingProject(false);
+                            toast("Project updated.");
+                          }}>Save changes →</button>
+                        </div>
+                      </div>
+                    )}
                     <div className="detail-stats">
                       <div className="dstat"><div className="dstat-lbl">Track</div><div className="dstat-val">{sel.track || "-"}</div></div>
-                      <div className="dstat"><div className="dstat-lbl">Deadline</div><div className="dstat-val">{fmtDays(sel.daysLeft)}</div></div>
+                      <div className="dstat"><div className="dstat-lbl">Deadline</div><div className="dstat-val">{fmtDays(livedays(sel))}</div></div>
                       <div className="dstat"><div className="dstat-lbl">Focus time</div><div className="dstat-val" style={{ color }}>{fmtDuration(totalFocusTime(sel.focusSessions ?? []))}</div></div>
                       <div className="dstat"><div className="dstat-lbl">Completion</div><div className="dstat-val">{taskCompletion(sel)}%</div></div>
                     </div>
@@ -1910,7 +2312,7 @@ export default function App() {
                             <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
                             GitHub issues
                           </button>
-                          <button className="add-task-btn" style={{ color, borderColor: "rgba(255,255,255,0.15)" }} onClick={addTask}><I.plus />Add task</button>
+                          <button className="add-task-btn" style={{ color, borderColor: "rgba(255,255,255,0.15)" }} onClick={() => addTask(sel.id)}><I.plus />Add task</button>
                         </div>
                       </div>
                       {showGitHub && (
@@ -2009,6 +2411,76 @@ export default function App() {
                     <I.send />
                   </button>
                 </div>
+              </div>
+            </div>
+
+            {/* ARCHIVE */}
+            <div className={"view" + (view === "archive" ? " active" : "")}>
+              <div style={{ padding: "var(--pad-section)", display: "flex", flexDirection: "column", gap: 20, flex: 1, overflowY: "auto" }}>
+                <div>
+                  <div className="settings-title">Archive</div>
+                  <div className="settings-sub">Shipped projects - completed work, preserved for reference</div>
+                </div>
+                {sorted.filter(p => p.status === "shipped").length === 0 ? (
+                  <div className="task-empty" style={{ padding: "40px 0", textAlign: "center" }}>
+                    No shipped projects yet. Mark a project as "shipped" to archive it.
+                  </div>
+                ) : (
+                  <div className="cards-grid">
+                    {sorted.filter(p => p.status === "shipped").map(p => {
+                      const color = projectColor(p);
+                      const comp = taskCompletion(p);
+                      const sessions = p.focusSessions ?? [];
+                      const totalTime = totalFocusTime(sessions);
+                      return (
+                        <div key={p.id} className="proj-card archive-card"
+                          style={{ "--pc": color } as React.CSSProperties}
+                          onClick={() => openDetail(p.id)}>
+                          <div className="pc-top">
+                            <div className="pc-name">{p.name}</div>
+                            <span className="pill pill-dim" style={{ color: "#22d3ee", borderColor: "rgba(34,211,238,0.3)", background: "rgba(34,211,238,0.07)" }}>shipped</span>
+                          </div>
+                          <div className="pc-desc">{p.desc}</div>
+                          <div className="pc-pills">
+                            <span className="pill pill-dim">{p.track || "-"}</span>
+                            {p.tags.slice(0, 3).map(t => <span key={t} className="pill pill-dim">#{t}</span>)}
+                          </div>
+                          <div className="archive-stats">
+                            <div className="archive-stat">
+                              <span className="archive-stat-lbl">Tasks</span>
+                              <span className="archive-stat-val">{p.tasks.filter(t => t.done).length}/{p.tasks.length}</span>
+                            </div>
+                            {totalTime > 0 && (
+                              <div className="archive-stat">
+                                <span className="archive-stat-lbl">Focus time</span>
+                                <span className="archive-stat-val" style={{ color }}>{fmtDuration(totalTime)}</span>
+                              </div>
+                            )}
+                            {sessions.length > 0 && (
+                              <div className="archive-stat">
+                                <span className="archive-stat-lbl">Sessions</span>
+                                <span className="archive-stat-val">{sessions.length}</span>
+                              </div>
+                            )}
+                            <div className="archive-stat">
+                              <span className="archive-stat-lbl">Created</span>
+                              <span className="archive-stat-val">{new Date(p.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span>
+                            </div>
+                          </div>
+                          <div className="pc-progress" style={{ marginTop: 8 }}>
+                            <div className="pc-progress-fill" style={{ width: comp + "%", background: color }} />
+                          </div>
+                          <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
+                            <button className="btn-cancel" style={{ fontSize: 9, padding: "3px 8px" }}
+                              onClick={e => { e.stopPropagation(); updateProject(p.id, { status: "active" }); toast(p.name + " moved back to active."); }}>
+                              Reactivate
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -2134,11 +2606,18 @@ export default function App() {
                 <div className="sg">
                   <div className="sg-title">Integrations</div>
                   <div className="srow" style={{ flexDirection: "column", alignItems: "flex-start", gap: 10 }}>
-                    <div className="si"><p>GitHub token</p><span>For importing issues as tasks. Stored locally.</span></div>
+                    <div className="si"><p>GitHub token</p><span>For importing issues as tasks. Stored locally only.</span></div>
                     <div style={{ display: "flex", gap: 8, width: "100%" }}>
-                      <input className="s-input" style={{ flex: 1, width: "auto" }} placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
-                        value={ghTokenDraft || settings.gitHubToken} onChange={e => setGhTokenDraft(e.target.value)} />
-                      <button className="btn-cancel" onClick={() => { patchSettings({ gitHubToken: ghTokenDraft }); toast("GitHub token saved."); }}>Save</button>
+                      <input className="s-input" style={{ flex: 1, width: "auto" }}
+                        type="password"
+                        placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+                        value={ghTokenDraft || settings.gitHubToken}
+                        onChange={e => setGhTokenDraft(e.target.value)} />
+                      <button className="btn-cancel" onClick={async () => {
+                        await saveGitHubToken(ghTokenDraft);
+                        toast("GitHub token saved securely.");
+                      }}>Save</button>
+                      {settings.gitHubToken && <button className="btn-cancel" style={{ color: "#ef4444" }} onClick={() => { patchSettings({ gitHubToken: "" }); setGhTokenDraft(""); toast("Token removed."); }}>Remove</button>}
                     </div>
                   </div>
                   <div className="srow"><div className="si"><p>Ollama model</p><span>AI Advisor model - run: ollama pull llama3.2</span></div>
@@ -2183,6 +2662,30 @@ export default function App() {
                   }}>Send test notification</button>
                 </div>
                 <div className="sg">
+                  <div className="sg-title">Updates</div>
+                  <div className="srow">
+                    <div className="si">
+                      <p>Check for updates</p>
+                      <span>{updateInfo?.state === "available" ? `v${updateInfo.version} available` : updateInfo?.state === "ready" ? `v${updateInfo.version} ready to install` : "Meridian checks automatically on launch"}</span>
+                    </div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      {updateInfo?.state === "ready" && (
+                        <button className="btn-save" style={{ fontSize: 9 }} onClick={() => window.electron?.updater.install()}>
+                          Restart &amp; install
+                        </button>
+                      )}
+                      {(!updateInfo || updateInfo.state === "error") && (
+                        <button className="btn-cancel" onClick={async () => {
+                          if (!window.electron) { toast("Auto-updates only available in the desktop app."); return; }
+                          const r = await window.electron.updater.check();
+                          if (r?.error) toast("Update check failed: " + r.error);
+                          else toast("Checking for updates…");
+                        }}>Check now</button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <div className="sg">
                   <div className="sg-title">Data</div>
                   <div className="srow"><div className="si"><p>Export all projects</p><span>Downloads as JSON</span></div>
                     <button className="btn-cancel" onClick={() => { exportJson(projects); toast("Exported."); }}>Export JSON</button></div>
@@ -2191,7 +2694,7 @@ export default function App() {
                   <div className="srow">
                     <div className="si"><p>Clear all data</p><span style={{ color: "#ef4444" }}>Cannot be undone</span></div>
                     <button className="btn-cancel" style={{ color: "#ef4444", borderColor: "rgba(239,68,68,0.3)" }}
-                      onClick={() => { if (window.confirm("Clear all data?")) { saveProjects([]); setView("dashboard"); toast("Cleared."); } }}>
+                      onClick={() => { const snap = projects; saveProjects([]); setView("dashboard"); toast("Data cleared - undo?"); undoRef.current = () => saveProjects(snap); undoTimer.current = setTimeout(() => { undoRef.current = null; }, 5000); }}>
                       Clear data
                     </button>
                   </div>

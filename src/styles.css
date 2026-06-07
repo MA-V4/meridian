@@ -2287,3 +2287,505 @@ body[data-typo="system-native"] .dash-greeting {
   color: rgba(0,0,0,0.5);
   z-index: 1;
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   FOCUS MODE + POMODORO UPGRADE
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Pomodoro wrapper ───────────────────────────────────────── */
+.pomo-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+}
+
+/* ── Mode row ───────────────────────────────────────────────── */
+.pomo-mode-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.pomo-mode-pill {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  padding: 4px 12px;
+  border-radius: var(--r);
+  transition: all .3s;
+}
+
+.pomo-elapsed {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: .08em;
+  color: var(--text3);
+}
+
+/* ── Ring ───────────────────────────────────────────────────── */
+.pomo-ring-wrap {
+  display: flex;
+  justify-content: center;
+}
+
+.pomo-ring {
+  position: relative;
+  width: 180px;
+  height: 180px;
+}
+
+.pomo-ring svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.pomo-ring-bg {
+  fill: none;
+  stroke: var(--rule2);
+  stroke-width: 6;
+}
+
+.pomo-ring-progress {
+  fill: none;
+  stroke-width: 6;
+  stroke-linecap: round;
+}
+
+.pomo-time {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+}
+
+.pomo-time-display {
+  font-family: var(--font-mono);
+  font-size: 2.2rem;
+  letter-spacing: -.02em;
+  line-height: 1;
+  transition: color .4s;
+}
+
+.pomo-mode-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+
+/* ── Controls ───────────────────────────────────────────────── */
+.pomo-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.pomo-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  cursor: pointer;
+  transition: all var(--dur-base);
+  border-radius: var(--r);
+}
+
+.pomo-btn svg { flex-shrink: 0; }
+
+.pomo-btn span {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.pomo-btn-secondary {
+  width: 56px;
+  height: 56px;
+  background: var(--bg3);
+  border: 1px solid var(--rule2);
+  color: var(--text3);
+}
+
+.pomo-btn-secondary:hover {
+  border-color: var(--rule3);
+  color: var(--text2);
+  background: var(--bg4);
+}
+
+.pomo-btn-secondary svg { width: 16px; height: 16px; }
+
+.pomo-btn-primary {
+  width: 80px;
+  height: 80px;
+  border: 2px solid;
+  font-size: 0;
+}
+
+.pomo-btn-primary svg { width: 22px; height: 22px; }
+.pomo-btn-primary span { font-size: 8px; }
+
+.pomo-btn-primary:hover { filter: brightness(1.1); }
+
+/* ── Settings ───────────────────────────────────────────────── */
+.pomo-settings-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pomo-settings-toggle {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--text3);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+  transition: color .12s;
+}
+
+.pomo-settings-toggle:hover { color: var(--accent); }
+
+.pomo-settings {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.pomo-settings label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text3);
+}
+
+.pomo-settings input[type="number"] {
+  width: 52px;
+  background: var(--bg3);
+  border: 1px solid var(--rule2);
+  border-radius: var(--r);
+  padding: 4px 7px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text);
+  text-align: center;
+}
+
+/* ── Session log ────────────────────────────────────────────── */
+.session-log { display: flex; flex-direction: column; gap: 5px; }
+
+.session-log-head {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--text4);
+  margin-bottom: 4px;
+}
+
+.session-log-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.session-log-date {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text3);
+  flex-shrink: 0;
+  width: 120px;
+}
+
+.session-log-bar-wrap {
+  flex: 1;
+  height: 3px;
+  background: var(--rule);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.session-log-bar {
+  height: 100%;
+  border-radius: 2px;
+  transition: width .3s;
+}
+
+.session-log-dur {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text3);
+  flex-shrink: 0;
+  width: 50px;
+  text-align: right;
+}
+
+/* ── Focus mode layout upgrade ──────────────────────────────── */
+.focus-tasks-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: var(--pad-card);
+  border-bottom: 1px solid var(--rule);
+}
+
+.focus-mini-score {
+  text-align: center;
+  min-width: 44px;
+}
+
+.focus-mini-score-val {
+  font-family: var(--font-display);
+  font-size: 1.4rem;
+  letter-spacing: var(--display-tracking);
+  line-height: 1;
+  color: var(--text2);
+}
+
+.focus-mini-score-lbl {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--text4);
+  margin-top: 2px;
+}
+
+/* ── Inline edit panel ──────────────────────────────────────── */
+.edit-panel {
+  background: var(--bg1);
+  border: 1px solid var(--rule2);
+  border-radius: var(--r);
+  margin: 0 var(--pad-section) var(--pad-section);
+  overflow: hidden;
+}
+
+.edit-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.edit-panel-title {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--text3);
+}
+
+.edit-panel .comp-grid {
+  padding: 16px 18px;
+}
+
+.edit-panel .drawer-footer {
+  padding: 12px 18px;
+  border-top: 1px solid var(--rule);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   TASK INLINE EDIT + DELETE + UNDO
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Task inline edit input ─────────────────────────────────── */
+.task-inline-edit {
+  width: 100%;
+  background: var(--bg3);
+  border: 1px solid var(--accent-b);
+  border-radius: var(--r);
+  padding: 5px 8px;
+  font-family: var(--font-body);
+  font-size: 12px;
+  color: var(--text);
+  outline: none;
+}
+
+.task-inline-edit::placeholder { color: var(--text4); }
+
+/* ── Task delete button ─────────────────────────────────────── */
+.task-delete-btn {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--text4);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+  opacity: 0;
+  transition: opacity 0.12s, color 0.12s;
+  flex-shrink: 0;
+}
+
+.task-item:hover .task-delete-btn { opacity: 1; }
+.task-delete-btn:hover { color: #ef4444; }
+
+/* ── Task add inline ────────────────────────────────────────── */
+.task-add-inline {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--task-pad);
+  padding-left: calc(var(--task-pad) + 20px);
+}
+
+/* ── Toast undo button ──────────────────────────────────────── */
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.toast-undo {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border: 1px solid rgba(255,255,255,0.3);
+  border-radius: var(--r);
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all .12s;
+  flex-shrink: 0;
+}
+
+.toast-undo:hover {
+  background: rgba(255,255,255,0.1);
+  border-color: rgba(255,255,255,0.5);
+}
+
+/* ── Task priority clickable dots ───────────────────────────── */
+.task-row {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  flex-wrap: wrap;
+}
+
+/* Date picker styling */
+input[type="date"].f-input {
+  color-scheme: dark;
+}
+
+body.theme-light input[type="date"].f-input {
+  color-scheme: light;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   AUTO-UPDATER BANNER
+   ═══════════════════════════════════════════════════════════════ */
+.update-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 16px;
+  background: rgba(34,211,238,0.07);
+  border-bottom: 1px solid rgba(34,211,238,0.18);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text2);
+  flex-shrink: 0;
+}
+.update-banner-error { background: rgba(239,68,68,0.07); border-color: rgba(239,68,68,0.18); }
+.update-banner-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: #22d3ee; flex-shrink: 0;
+  animation: blink 1.4s ease-in-out infinite;
+}
+.update-banner-dot.ready { background: #4ade80; animation: none; }
+.update-banner-dot.downloading { background: #f59e0b; }
+.update-banner-btn {
+  font-family: var(--font-mono); font-size: 9px; letter-spacing: .1em;
+  text-transform: uppercase; padding: 4px 10px;
+  background: rgba(34,211,238,0.12); border: 1px solid rgba(34,211,238,0.35);
+  color: #22d3ee; border-radius: var(--r); cursor: pointer;
+  transition: all var(--dur-base);
+}
+.update-banner-btn:hover { background: rgba(34,211,238,0.22); }
+.update-banner-dismiss {
+  margin-left: auto; background: none; border: none;
+  color: var(--text4); font-size: 16px; cursor: pointer;
+  padding: 0 2px; line-height: 1; transition: color .12s;
+}
+.update-banner-dismiss:hover { color: var(--text2); }
+.update-banner-prog {
+  flex: 1; height: 3px; background: var(--rule2); border-radius: 2px; overflow: hidden;
+}
+.update-banner-prog > div { height: 100%; background: #f59e0b; border-radius: 2px; transition: width .3s; }
+
+/* ═══════════════════════════════════════════════════════════════
+   ARCHIVE VIEW
+   ═══════════════════════════════════════════════════════════════ */
+.archive-card {
+  opacity: 0.82;
+  filter: saturate(0.7);
+  transition: opacity var(--dur-base), filter var(--dur-base);
+}
+.archive-card:hover { opacity: 1; filter: saturate(1); }
+
+.archive-stats {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--rule);
+}
+.archive-stat { display: flex; flex-direction: column; gap: 2px; }
+.archive-stat-lbl {
+  font-family: var(--font-mono); font-size: 8px;
+  letter-spacing: .1em; text-transform: uppercase; color: var(--text4);
+}
+.archive-stat-val { font-family: var(--font-mono); font-size: 12px; color: var(--text2); }
+
+/* ═══════════════════════════════════════════════════════════════
+   TASK DRAG-TO-REORDER
+   ═══════════════════════════════════════════════════════════════ */
+.task-drag-handle {
+  color: var(--text4);
+  cursor: grab;
+  padding: 2px 4px;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity .12s;
+  display: flex;
+  align-items: center;
+  margin-right: 2px;
+}
+.task-item:hover .task-drag-handle { opacity: 1; }
+.task-drag-handle:active { cursor: grabbing; }
+
+.task-item.drag-over {
+  border-top: 2px solid var(--accent);
+  margin-top: -2px;
+}
+
+.task-item[draggable="true"]:active {
+  opacity: 0.5;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   COMMAND PALETTE - TASK RESULTS
+   ═══════════════════════════════════════════════════════════════ */
+.cmd-item .cmd-item-label s { text-decoration: line-through; opacity: 0.6; }

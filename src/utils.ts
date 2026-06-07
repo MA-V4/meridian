@@ -25,7 +25,12 @@ export function decayPenaltyFor(p: Project): number {
 
 // ── SCORE ─────────────────────────────────────────────────────
 export function scoreProject(p: Project, allProjects?: Project[]): ProjectScore {
-  const u = urgency(p.daysLeft);
+  // Always recompute days from the deadline date if available
+  const liveDaysLeft = p.deadlineDate
+    ? Math.round((new Date(p.deadlineDate).setHours(0,0,0,0) - new Date().setHours(0,0,0,0)) / 86400000)
+    : p.daysLeft;
+
+  const u = urgency(liveDaysLeft);
   const raw = Math.round(clamp(p.impact * 4.2 + p.confidence * 2.4 + p.energy * 2.1 + u - p.effort * 2.8, 0, 100));
 
   const decay = decayPenaltyFor(p);
@@ -48,7 +53,7 @@ export function scoreProject(p: Project, allProjects?: Project[]): ProjectScore 
   else if (score >= 50) stage = "Next Burn";
   else if (score >= 34) stage = "Incubate";
 
-  return { score, rawScore: raw, decayPenalty: decay, blockPenalty, stage };
+  return { score, rawScore: raw, decayPenalty: decay, blockPenalty, stage, liveDaysLeft };
 }
 
 export const projectColor = (p: Project): string =>
@@ -142,12 +147,12 @@ export function projectToMarkdown(p: Project, sc: ProjectScore): string {
   ).join("\n");
   return `# ${p.name}
 
-**Track:** ${p.track || "-"}  
+**Track:** ${p.track || "—"}  
 **Status:** ${p.status}  
 **Priority score:** ${sc.score}%  
 **Stage:** ${sc.stage}  
 **Deadline:** ${fmtDays(p.daysLeft)}  
-**Tags:** ${p.tags.join(", ") || "-"}
+**Tags:** ${p.tags.join(", ") || "—"}
 
 ## Description
 ${p.desc}
@@ -161,7 +166,7 @@ ${tasks || "No tasks yet."}
 }
 
 // ── OLLAMA AI ─────────────────────────────────────────────────
-// Ollama runs locally on the user's machine - no API key, no internet,
+// Ollama runs locally on the user's machine — no API key, no internet,
 // no rate limits. Users install it once and pull any model they want.
 // Default: llama3.2 (fast, smart, runs on CPU)
 //
@@ -240,14 +245,14 @@ export async function askOllama(
 
   const data = await res.json() as { message?: { content?: string }; error?: string };
   if (data.error) throw new Error(data.error);
-  return (data.message?.content ?? "").trim() || "No response - try again.";
+  return (data.message?.content ?? "").trim() || "No response — try again.";
 }
 
 export const OLLAMA_NOT_RUNNING_MSG =
   `Ollama isn't running. To set it up:\n\n` +
   `1. Download from ollama.com (free, Mac/Windows/Linux)\n` +
   `2. Run: ollama pull llama3.2\n` +
-  `3. Ollama starts automatically - then try again here.`;
+  `3. Ollama starts automatically — then try again here.`;
 
 export function allTags(projects: Project[]): { tag: string; count: number }[] {
   const map: Record<string, number> = {};
@@ -320,7 +325,7 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
   {
     id: "freelance-client",
     name: "Freelance Client Project",
-    desc: "Scoped client engagement - discovery, design, build, review, and handover with clear milestones and sign-off points.",
+    desc: "Scoped client engagement — discovery, design, build, review, and handover with clear milestones and sign-off points.",
     track: "Freelance",
     impact: 9, effort: 7, energy: 6, confidence: 8, daysLeft: 30,
     tags: ["freelance", "client", "paid"],
@@ -341,17 +346,17 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
     impact: 6, effort: 5, energy: 9, confidence: 7, daysLeft: 21,
     tags: ["learning", "skill", "personal"],
     tasks: [
-      { text: "Define what 'done' looks like - specific skill or project goal", priority: "high", note: "" },
+      { text: "Define what 'done' looks like — specific skill or project goal", priority: "high", note: "" },
       { text: "Find and bookmark 3 high-quality resources", priority: "med", note: "" },
       { text: "Complete core tutorial or course module", priority: "high", note: "" },
-      { text: "Build a small proof-of-concept project from scratch", priority: "high", note: "No copying - build it yourself" },
+      { text: "Build a small proof-of-concept project from scratch", priority: "high", note: "No copying — build it yourself" },
       { text: "Write a short reflection or blog post on what you learned", priority: "low", note: "" },
     ],
   },
   {
     id: "job-application",
     name: "Job Application",
-    desc: "End-to-end job application - research, tailor materials, apply, follow up, and prepare for interviews.",
+    desc: "End-to-end job application — research, tailor materials, apply, follow up, and prepare for interviews.",
     track: "Career",
     impact: 9, effort: 5, energy: 6, confidence: 6, daysLeft: 14,
     tags: ["career", "job", "application"],
@@ -360,14 +365,14 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
       { text: "Tailor CV and cover letter to this specific role", priority: "high", note: "" },
       { text: "Submit application and log submission date", priority: "high", note: "" },
       { text: "Follow up if no response after 1 week", priority: "med", note: "" },
-      { text: "Prepare for technical interview - review job description", priority: "high", note: "" },
+      { text: "Prepare for technical interview — review job description", priority: "high", note: "" },
       { text: "Prepare 5 behavioural answers using STAR format", priority: "med", note: "" },
     ],
   },
   {
     id: "product-launch",
     name: "Product Launch",
-    desc: "Plan, build, and ship a product or feature with a coordinated launch - landing page, announcement, and early user feedback loop.",
+    desc: "Plan, build, and ship a product or feature with a coordinated launch — landing page, announcement, and early user feedback loop.",
     track: "Product",
     impact: 10, effort: 8, energy: 8, confidence: 6, daysLeft: 45,
     tags: ["product", "launch", "marketing"],
@@ -449,10 +454,10 @@ export function sendDigestNotification(projects: Project[], name: string): void 
   if (!top3.length) return;
 
   const body = top3
-    .map((p, i) => `${i + 1}. ${p.name} - ${scoreProject(p, projects).score}%`)
+    .map((p, i) => `${i + 1}. ${p.name} — ${scoreProject(p, projects).score}%`)
     .join("\n");
 
-  new Notification(`Good morning${name ? `, ${name}` : ""} - your Meridian priorities`, {
+  new Notification(`Good morning${name ? `, ${name}` : ""} — your Meridian priorities`, {
     body,
     icon: "/favicon.ico",
     tag: "meridian-digest",
