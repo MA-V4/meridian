@@ -6,7 +6,6 @@
     "name": "Mihran Ali",
     "url": "https://mihranali.vercel.app"
   },
-  "licence": "SEE LICENCE IN LICENCE",
   "private": true,
   "type": "module",
   "main": "electron/main.cjs",
@@ -30,7 +29,9 @@
     "files": [
       "dist/**/*",
       "electron/**/*",
-      "public/**/*"
+      "public/**/*",
+      "node_modules/electron-updater/**/*",
+      "node_modules/builder-util-runtime/**/*"
     ],
     "win": {
       "target": [
@@ -40,20 +41,17 @@
             "x64"
           ]
         }
-      ],
-      "icon": "public/icon.png"
+      ]
     },
     "mac": {
       "target": [
         {
           "target": "dmg",
           "arch": [
-            "x64",
-            "arm64"
+            "x64"
           ]
         }
       ],
-      "icon": "public/icon.png",
       "category": "public.app-category.productivity"
     },
     "linux": {
@@ -65,7 +63,6 @@
           ]
         }
       ],
-      "icon": "public/icon.png",
       "category": "Utility"
     },
     "nsis": {
@@ -98,5 +95,6 @@
     "electron": "^36.0.0",
     "electron-builder": "^26.0.0",
     "wait-on": "^8.0.0"
-  }
+  },
+  "license": "SEE LICENSE IN LICENCE"
 }

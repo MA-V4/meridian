@@ -27,7 +27,7 @@ jobs:
           node-version: 20
           cache: "npm"
 
-      - name: Install Linux build dependencies
+      - name: Install Linux system dependencies
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
@@ -45,7 +45,7 @@ jobs:
             fakeroot
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
 
       - name: Build Vite app
         run: npm run build
@@ -67,6 +67,12 @@ jobs:
         run: npx electron-builder --linux --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: List release output
+        run: |
+          echo "=== Release folder contents ==="
+          ls -la release/ || echo "No release folder found"
+        shell: bash
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
@@ -94,12 +100,15 @@ jobs:
         with:
           path: artifacts
 
+      - name: List downloaded artifacts
+        run: find artifacts -type f | sort
+
       - name: Flatten artifact folders
         run: |
           mkdir -p release-files
           find artifacts -type f \( -name "*.exe" -o -name "*.dmg" -o -name "*.AppImage" -o -name "*.zip" \) -exec cp {} release-files/ \;
-          echo "Files to release:"
-          ls -la release-files/
+          echo "=== Files to release ==="
+          ls -la release-files/ || echo "No files found"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
