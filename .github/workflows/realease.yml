@@ -3,13 +3,14 @@ name: Build & Release
 on:
   push:
     tags:
-      - "v*.*.*"   # triggers on tags like v1.0.0, v1.2.3
+      - "v*.*.*"
 
 jobs:
   build:
     name: Build on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         os: [windows-latest, macos-latest, ubuntu-latest]
 
@@ -22,6 +23,23 @@ jobs:
         with:
           node-version: 20
           cache: "npm"
+
+      - name: Install Linux build dependencies
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev \
+            libnotify-dev \
+            libnss3 \
+            libxss1 \
+            libxtst6 \
+            xauth \
+            xvfb \
+            libgbm-dev \
+            libasound2-dev \
+            rpm \
+            fakeroot
 
       - name: Install dependencies
         run: npm ci
@@ -56,12 +74,14 @@ jobs:
             release/*.dmg
             release/*.AppImage
             release/*.zip
+          if-no-files-found: warn
           retention-days: 5
 
   release:
     name: Publish GitHub Release
     needs: build
     runs-on: ubuntu-latest
+    if: always()
 
     steps:
       - name: Download all artifacts
@@ -73,6 +93,7 @@ jobs:
         run: |
           mkdir -p release-files
           find artifacts -type f \( -name "*.exe" -o -name "*.dmg" -o -name "*.AppImage" -o -name "*.zip" \) -exec cp {} release-files/ \;
+          echo "Files to release:"
           ls -la release-files/
 
       - name: Create GitHub Release
@@ -84,11 +105,11 @@ jobs:
 
             ### Download
 
-            | Platform    | File                   |
-            |-------------|------------------------|
+            | Platform | File |
+            |----------|------|
             | **Windows** | `.exe` installer below |
-            | **macOS**   | `.dmg` below           |
-            | **Linux**   | `.AppImage` below      |
+            | **macOS** | `.dmg` below |
+            | **Linux** | `.AppImage` below |
 
             ### AI setup (optional)
             Meridian uses Ollama for local AI — no API key, no internet required.
