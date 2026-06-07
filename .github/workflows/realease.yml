@@ -5,6 +5,9 @@ on:
     tags:
       - "v*.*.*"
 
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Build on ${{ matrix.os }}
@@ -82,6 +85,8 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     if: always()
+    permissions:
+      contents: write
 
     steps:
       - name: Download all artifacts
