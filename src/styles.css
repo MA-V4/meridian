@@ -1977,7 +1977,7 @@ kbd {
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   THEME EXPANSION - NEW AXES
+   THEME EXPANSION — NEW AXES
    ═══════════════════════════════════════════════════════════════ */
 
 /* ── ANIMATION SPEED TOKENS ────────────────────────────────── */
@@ -2012,11 +2012,11 @@ body { font-size: var(--body-size); line-height: var(--body-line-height); }
 
 /* ── CARD STYLES ────────────────────────────────────────────── */
 
-/* Minimal (default) - already styled */
+/* Minimal (default) — already styled */
 .card-minimal .proj-card { box-shadow: none; }
 .card-minimal .kanban-card { box-shadow: none; }
 
-/* Bordered - stronger borders, accent left rule */
+/* Bordered — stronger borders, accent left rule */
 .card-bordered .proj-card {
   border-color: var(--rule3);
   border-left: 3px solid var(--pc, var(--accent));
@@ -2027,7 +2027,7 @@ body { font-size: var(--body-size); line-height: var(--body-line-height); }
   border-top-width: 3px;
 }
 
-/* Elevated - shadows */
+/* Elevated — shadows */
 .card-elevated .proj-card {
   box-shadow: 0 2px 8px rgba(0,0,0,0.35), 0 1px 2px rgba(0,0,0,0.2);
   border-color: transparent;
@@ -2130,7 +2130,7 @@ body.theme-light .kanban-card { background: #fff; }
 /* Focus mode in light mode */
 body.theme-light .focus-pomo-panel { background: var(--bg2); }
 
-/* Neon Tokyo - special glow effects */
+/* Neon Tokyo — special glow effects */
 body:has(.app) .neon-glow {
   text-shadow: 0 0 20px var(--accent);
 }
@@ -2141,28 +2141,28 @@ body:has(.app) .neon-glow {
   box-shadow: 0 0 12px var(--accent), 0 0 24px var(--accent);
 }
 
-/* ── FONT VARIATIONS - DISPLAY SIZE OVERRIDES ───────────────── */
+/* ── FONT VARIATIONS — DISPLAY SIZE OVERRIDES ───────────────── */
 
-/* Slab serif - slightly more upright */
+/* Slab serif — slightly more upright */
 body[data-typo="slab-serif"] .dash-greeting,
 body[data-typo="slab-serif"] .detail-name,
 body[data-typo="slab-serif"] .section-title {
   letter-spacing: -0.01em;
 }
 
-/* Renaissance - italic accents */
+/* Renaissance — italic accents */
 body[data-typo="renaissance"] .dash-greeting em,
 body[data-typo="renaissance"] .brand-script {
   font-style: italic;
   font-weight: 400;
 }
 
-/* System native - tighter metrics */
+/* System native — tighter metrics */
 body[data-typo="system-native"] .dash-greeting {
   font-size: clamp(1.6rem, 3vw, 2.1rem);
 }
 
-/* ── BORDER RADIUS - APPLY TO ALL ROUNDED ELEMENTS ─────────── */
+/* ── BORDER RADIUS — APPLY TO ALL ROUNDED ELEMENTS ─────────── */
 .modal,
 .review-modal,
 .cmd-box,
@@ -2786,6 +2786,126 @@ body.theme-light input[type="date"].f-input {
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   COMMAND PALETTE - TASK RESULTS
+   COMMAND PALETTE — TASK RESULTS
    ═══════════════════════════════════════════════════════════════ */
 .cmd-item .cmd-item-label s { text-decoration: line-through; opacity: 0.6; }
+
+
+/* ═══════════════════════════════════════════════════════════════
+   MARK AS DONE
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Ship button on dashboard cards — appears on hover */
+.card-ship-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 10px;
+  padding: 5px 10px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  background: transparent;
+  border: 1px solid;
+  border-radius: var(--r);
+  cursor: pointer;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity var(--dur-base), transform var(--dur-base), background var(--dur-base);
+  width: 100%;
+  justify-content: center;
+}
+
+.proj-card:hover .card-ship-btn {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.card-ship-btn:hover {
+  background: rgba(255,255,255,0.06);
+}
+
+/* "Mark as done" button in detail view — distinct from other t-btns */
+.t-btn.ship-btn {
+  background: rgba(74,222,128,0.10);
+  border-color: rgba(74,222,128,0.35);
+  color: #4ade80;
+}
+
+.t-btn.ship-btn:hover {
+  background: rgba(74,222,128,0.20);
+  border-color: rgba(74,222,128,0.55);
+}
+
+/* Shipped badge on detail view pills */
+.pill-shipped {
+  color: #4ade80;
+  border-color: rgba(74,222,128,0.3);
+  background: rgba(74,222,128,0.07);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   SHIPPED STATE — DETAIL VIEW
+   ═══════════════════════════════════════════════════════════════ */
+.shipped-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 20px 24px;
+  text-align: center;
+  min-width: 180px;
+}
+
+.shipped-check {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: rgba(74,222,128,0.12);
+  border: 2px solid rgba(74,222,128,0.4);
+  display: grid;
+  place-items: center;
+  color: #4ade80;
+}
+
+.shipped-label {
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  letter-spacing: var(--display-tracking);
+  color: #4ade80;
+}
+
+.shipped-stats {
+  display: flex;
+  gap: 16px;
+  margin-top: 4px;
+}
+
+.shipped-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.shipped-stat-val {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text2);
+  font-weight: 500;
+}
+
+.shipped-stat-lbl {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--text4);
+}
+
+/* Dashboard card — shipped state */
+.proj-card.shipped-card {
+  opacity: 0.65;
+  filter: saturate(0.5);
+}

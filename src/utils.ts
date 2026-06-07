@@ -25,6 +25,11 @@ export function decayPenaltyFor(p: Project): number {
 
 // ── SCORE ─────────────────────────────────────────────────────
 export function scoreProject(p: Project, allProjects?: Project[]): ProjectScore {
+  // Shipped projects are done — always 100%
+  if (p.status === "shipped") {
+    return { score: 100, rawScore: 100, decayPenalty: 0, blockPenalty: 0, stage: "Shipped", liveDaysLeft: p.daysLeft };
+  }
+
   // Always recompute days from the deadline date if available
   const liveDaysLeft = p.deadlineDate
     ? Math.round((new Date(p.deadlineDate).setHours(0,0,0,0) - new Date().setHours(0,0,0,0)) / 86400000)
@@ -48,8 +53,7 @@ export function scoreProject(p: Project, allProjects?: Project[]): ProjectScore 
   const score = Math.round(clamp(raw - decay - blockPenalty, 0, 100));
 
   let stage = "Parked";
-  if (p.status === "shipped") stage = "Shipped";
-  else if (score >= 68) stage = "Launch Lane";
+  if (score >= 68) stage = "Launch Lane";
   else if (score >= 50) stage = "Next Burn";
   else if (score >= 34) stage = "Incubate";
 

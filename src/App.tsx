@@ -60,9 +60,9 @@ const load = <T,>(key: string, fallback: T): T => {
 const persist = <T,>(key: string, val: T) => {
   try { localStorage.setItem(key, JSON.stringify(val)); }
   catch (e) {
-    // QuotaExceededError - attempt to free space by trimming score history
+    // QuotaExceededError — attempt to free space by trimming score history
     if (e instanceof DOMException && e.name === "QuotaExceededError") {
-      console.warn("[Meridian] localStorage quota exceeded - trimming score history");
+      console.warn("[Meridian] localStorage quota exceeded — trimming score history");
       try {
         const projects = load<Project[]>(SK.projects, []);
         const trimmed = projects.map((p: Project) => ({ ...p, scoreHistory: (p.scoreHistory ?? []).slice(-7) }));
@@ -300,7 +300,7 @@ function Pomodoro({
         </div>
       </div>
 
-      {/* Controls - Reset | Start/Pause | Skip */}
+      {/* Controls — Reset | Start/Pause | Skip */}
       <div className="pomo-controls">
         <button className="pomo-btn pomo-btn-secondary" onClick={reset} title="Reset (saves partial session)">
           <I.reset /><span>Reset</span>
@@ -542,7 +542,7 @@ function WeeklyReviewModal({
       const result = await askOllama(ollamaUrl, ollamaModel, prompt, projects);
       setSummary(result);
     } catch {
-      setSummary("Could not generate summary - make sure Ollama is running.");
+      setSummary("Could not generate summary — make sure Ollama is running.");
     } finally {
       setGenerating(false);
     }
@@ -1168,7 +1168,7 @@ export default function App() {
   const [showReview, setShowReview]   = useState(false);
   const [reviewDismissed, setReviewDismissed] = useState(false);
   const [aiMessages, setAiMessages]   = useState<{ role: "bot"|"user"; text: string }[]>([
-    { role: "bot", text: "Hello - I'm your Meridian AI advisor, powered by Ollama. Hit \"Check status\" to confirm Ollama is running, then ask me anything about your projects." },
+    { role: "bot", text: "Hello — I'm your Meridian AI advisor, powered by Ollama. Hit \"Check status\" to confirm Ollama is running, then ask me anything about your projects." },
   ]);
   const [aiInput, setAiInput]         = useState("");
   const [aiLoading, setAiLoading]     = useState(false);
@@ -1259,7 +1259,7 @@ export default function App() {
     return () => cleanups.forEach(c => c?.());
   }, []);
 
-  // ── safeStorage - load encrypted GitHub token on mount ────
+  // ── safeStorage — load encrypted GitHub token on mount ────
   useEffect(() => {
     const load = async () => {
       const el = window.electron;
@@ -1370,7 +1370,7 @@ export default function App() {
     const next = projects.filter(p => p.id !== id)
       .map(p => ({ ...p, blockedBy: (p.blockedBy ?? []).filter(b => b !== id) }));
     saveProjects(next); setSelectedId(next[0]?.id ?? ""); setView("dashboard");
-    toast("Project removed - undo?");
+    toast("Project removed — undo?");
     undoRef.current = () => { saveProjects(snapshot); setSelectedId(id); setView("detail"); };
     if (undoTimer.current) clearTimeout(undoTimer.current);
     undoTimer.current = setTimeout(() => { undoRef.current = null; }, 5000);
@@ -1399,7 +1399,7 @@ export default function App() {
     // Undo-able delete
     const snapshot = p.tasks;
     updateProject(pid, { tasks: p.tasks.filter(t => t.id !== tid) });
-    toast("Task removed - undo?");
+    toast("Task removed — undo?");
     // We store the undo action in a ref so it can be triggered
     undoRef.current = () => updateProject(pid, { tasks: snapshot });
     if (undoTimer.current) clearTimeout(undoTimer.current);
@@ -1553,7 +1553,7 @@ export default function App() {
   const renderTasks = (project: Project, color: string) => (
     <>
       {project.tasks.length === 0 && addingTaskPid !== project.id && (
-        <div className="task-empty">No tasks yet - add one above.</div>
+        <div className="task-empty">No tasks yet — add one above.</div>
       )}
       {project.tasks.map(task => (
         <div key={task.id}
@@ -1670,9 +1670,9 @@ export default function App() {
                   <div className="focus-tasks-title" style={{ color }}>{focusProj.name}</div>
                   <div className="focus-tasks-sub">{focusProj.desc}</div>
                   <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
-                    <span className="pill" style={{ color, borderColor: color + "44", background: color + "10" }}>{sc.score}% - {sc.stage}</span>
+                    <span className="pill" style={{ color, borderColor: color + "44", background: color + "10" }}>{sc.score}% — {sc.stage}</span>
                     <span className={"pill " + (livedays(focusProj) < 0 ? "pill-red" : "pill-dim")}>{fmtDays(livedays(focusProj))}</span>
-                    <span className="pill pill-dim">{focusProj.track || "-"}</span>
+                    <span className="pill pill-dim">{focusProj.track || "—"}</span>
                     {sc.decayPenalty > 0 && <span className="pill" style={{ color: "#ef4444", borderColor: "rgba(239,68,68,0.3)", background: "rgba(239,68,68,0.07)" }}>↓ stale -{sc.decayPenalty}pts</span>}
                   </div>
                 </div>
@@ -1750,7 +1750,7 @@ export default function App() {
         <div className="modal-backdrop">
           <div className="modal">
             <div className="modal-title">Welcome to Meridian.</div>
-            <div className="modal-sub">A priority-scored command centre for builders. Local-first - everything lives on your machine.</div>
+            <div className="modal-sub">A priority-scored command centre for builders. Local-first — everything lives on your machine.</div>
             <span className="f-lbl">What should I call you?</span>
             <input className="f-input" placeholder="Your name" value={nameInput}
               onChange={e => setNameInput(e.target.value)}
@@ -1946,14 +1946,14 @@ export default function App() {
                 <div className="dash-greeting">{greeting}, <em>{settings.name || "there"}.</em></div>
                 <div className="dash-sub">
                   {sorted.length === 0
-                    ? "No projects yet - hit \"+ New project\" to get started."
-                    : (overdue > 0 ? overdue + " overdue - " : "") + sorted.filter(p => livedays(p) >= 0 && livedays(p) <= 7 && p.status !== "shipped").length + " urgent this week."
+                    ? "No projects yet — hit \"+ New project\" to get started."
+                    : (overdue > 0 ? overdue + " overdue — " : "") + sorted.filter(p => livedays(p) >= 0 && livedays(p) <= 7 && p.status !== "shipped").length + " urgent this week."
                   }
                 </div>
               </div>
               <div className="metrics-row">
                 <div className="metric-card"><div className="m-lbl">Total projects</div><div className="m-val accent">{String(sorted.length).padStart(2, "0")}</div><div className="m-note">All tracks</div></div>
-                <div className="metric-card"><div className="m-lbl">Avg priority</div><div className="m-val">{sorted.length ? avg + "%" : "-"}</div><div className="m-note">Score weighted</div></div>
+                <div className="metric-card"><div className="m-lbl">Avg priority</div><div className="m-val">{sorted.length ? avg + "%" : "—"}</div><div className="m-note">Score weighted</div></div>
                 <div className="metric-card"><div className="m-lbl">Overdue</div><div className="m-val" style={{ color: "#ef4444" }}>{String(overdue).padStart(2, "0")}</div><div className="m-note">Needs attention</div></div>
                 <div className="metric-card"><div className="m-lbl">Shipped</div><div className="m-val accent2">{String(shipped_).padStart(2, "0")}</div><div className="m-note">Completed</div></div>
               </div>
@@ -1997,7 +1997,7 @@ export default function App() {
                           <div className="pc-desc">{p.desc}</div>
                           <div className="pc-pills">
                             <span className="pill" style={{ color, borderColor: "rgba(255,255,255,0.14)", background: "rgba(255,255,255,0.04)" }}>{sc.stage}</span>
-                            <span className="pill pill-dim">{p.track || "-"}</span>
+                            <span className="pill pill-dim">{p.track || "—"}</span>
                             <span className={"pill " + (livedays(p) < 0 ? "pill-red" : "pill-dim")}>{fmtDays(livedays(p))}</span>
                           </div>
                           {sc.decayPenalty > 0 && (
@@ -2008,6 +2008,16 @@ export default function App() {
                             </div>
                           )}
                           <Sparkline history={p.scoreHistory ?? []} color={color} />
+                          {/* Ship button — appears on hover */}
+                          <button className="card-ship-btn" title="Mark as done"
+                            onClick={e => {
+                              e.stopPropagation();
+                              updateProject(p.id, { status: "shipped", lastTouched: new Date().toISOString() });
+                              toast(p.name + " shipped! View in Archive.");
+                            }}
+                            style={{ borderColor: color + "66", color }}>
+                            {I.check(10)} Done
+                          </button>
                           <div className="pc-progress"><div className="pc-progress-fill" style={{ width: comp + "%", background: color }} /></div>
                         </div>
                       );
@@ -2076,7 +2086,7 @@ export default function App() {
                               onClick={() => openDetail(p.id)}>
                               <div className="kanban-card-name">{p.name}</div>
                               <div className="kanban-card-meta">
-                                <span className="pill pill-dim">{p.track || "-"}</span>
+                                <span className="pill pill-dim">{p.track || "—"}</span>
                                 <span className={"pill " + (livedays(p) < 0 ? "pill-red" : "pill-dim")}>{fmtDays(livedays(p))}</span>
                                 {sc.decayPenalty > 0 && <span style={{ fontSize: 8, color: "#ef4444", fontFamily: "var(--font-mono)" }}>↓{sc.decayPenalty}</span>}
                                 <span className="kanban-card-score" style={{ color }}>{sc.score}%</span>
@@ -2208,35 +2218,89 @@ export default function App() {
                         <div className="detail-name">{sel.name}</div>
                         <div className="detail-desc">{sel.desc}</div>
                         <div className="detail-pills">
-                          <span className="pill" style={{ color, borderColor: "rgba(255,255,255,0.14)", background: "rgba(255,255,255,0.04)" }}>{sc.stage}</span>
-                          <span className={"pill " + (livedays(sel) < 0 ? "pill-red" : "pill-dim")}>{fmtDays(livedays(sel))}</span>
-                          <span className="pill pill-dim">{sel.status}</span>
+                          {sel.status === "shipped"
+                            ? <span className="pill pill-shipped">✓ Shipped</span>
+                            : <span className="pill" style={{ color, borderColor: "rgba(255,255,255,0.14)", background: "rgba(255,255,255,0.04)" }}>{sc.stage}</span>
+                          }
+                          {sel.status !== "shipped" && <span className={"pill " + (livedays(sel) < 0 ? "pill-red" : "pill-dim")}>{fmtDays(livedays(sel))}</span>}
+                          <span className="pill pill-dim">{sel.track || "—"}</span>
                           {sel.tags.map(t => <span key={t} className="pill pill-dim">{t}</span>)}
                           {sc.decayPenalty > 0 && <span className="pill" style={{ color: "#ef4444", borderColor: "rgba(239,68,68,0.3)", background: "rgba(239,68,68,0.08)" }}>↓ {sc.decayPenalty}pt decay</span>}
                           {sc.blockPenalty  > 0 && <span className="block-badge">blocked -{sc.blockPenalty}pts</span>}
                         </div>
                       </div>
-                      <div className="score-block">
-                        <div className="score-giant" style={{ color }}>{sc.score}%</div>
-                        <div className="score-label">Priority score</div>
-                        <div className="score-breakdown">
-                          <div className="score-breakdown-row"><span>Base score</span><span>{sc.rawScore}%</span></div>
-                          {sc.decayPenalty > 0 && <div className="score-breakdown-row"><span>Decay</span><span className="neg">-{sc.decayPenalty}</span></div>}
-                          {sc.blockPenalty  > 0 && <div className="score-breakdown-row"><span>Blocked</span><span className="neg">-{sc.blockPenalty}</span></div>}
-                          <div className="score-breakdown-row total"><span>Total</span><span>{sc.score}%</span></div>
+
+                      {/* ── Shipped state ── */}
+                      {sel.status === "shipped" ? (
+                        <div className="shipped-block">
+                          <div className="shipped-check">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="32" height="32">
+                              <polyline points="20 6 9 17 4 12" strokeLinecap="round" strokeLinejoin="round"/>
+                            </svg>
+                          </div>
+                          <div className="shipped-label">Done</div>
+                          <div className="shipped-stats">
+                            <div className="shipped-stat">
+                              <span className="shipped-stat-val">{taskCompletion(sel)}%</span>
+                              <span className="shipped-stat-lbl">tasks done</span>
+                            </div>
+                            {totalFocusTime(sel.focusSessions ?? []) > 0 && (
+                              <div className="shipped-stat">
+                                <span className="shipped-stat-val">{fmtDuration(totalFocusTime(sel.focusSessions ?? []))}</span>
+                                <span className="shipped-stat-lbl">focused</span>
+                              </div>
+                            )}
+                            <div className="shipped-stat">
+                              <span className="shipped-stat-val">{new Date(sel.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</span>
+                              <span className="shipped-stat-lbl">started</span>
+                            </div>
+                          </div>
+                          <div style={{ display: "flex", gap: 6, marginTop: 14, flexWrap: "wrap", justifyContent: "center" }}>
+                            <button className="t-btn" onClick={() => openEdit(sel)}><I.edit /> Edit</button>
+                            <button className="t-btn" onClick={() => {
+                              const md = projectToMarkdown(sel, sc);
+                              const blob = new Blob([md], { type: "text/markdown" });
+                              const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: sel.name + ".md" });
+                              a.click(); toast("Exported as Markdown.");
+                            }}>Export .md</button>
+                            <button className="t-btn" onClick={() => {
+                              updateProject(sel.id, { status: "active", lastTouched: new Date().toISOString() });
+                              toast(sel.name + " reactivated.");
+                            }}><I.unarchive /> Reactivate</button>
+                            <button className="t-btn danger" onClick={() => removeProject(sel.id)}>Remove</button>
+                          </div>
                         </div>
-                        <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                          <button className="t-btn" onClick={() => openEdit(sel)}><I.edit /> Edit</button>
-                          <button className="t-btn" onClick={() => setFocusProjectId(sel.id)}>Focus mode</button>
-                          <button className="t-btn" onClick={() => {
-                            const md = projectToMarkdown(sel, sc);
-                            const blob = new Blob([md], { type: "text/markdown" });
-                            const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: sel.name + ".md" });
-                            a.click(); toast("Exported as Markdown.");
-                          }}>Export .md</button>
-                          <button className="t-btn danger" onClick={() => removeProject(sel.id)}>Remove</button>
+                      ) : (
+                        /* ── Active scoring state ── */
+                        <div className="score-block">
+                          <div className="score-giant" style={{ color }}>{sc.score}%</div>
+                          <div className="score-label">Priority score</div>
+                          <div className="score-breakdown">
+                            <div className="score-breakdown-row"><span>Base score</span><span>{sc.rawScore}%</span></div>
+                            {sc.decayPenalty > 0 && <div className="score-breakdown-row"><span>Decay</span><span className="neg">-{sc.decayPenalty}</span></div>}
+                            {sc.blockPenalty  > 0 && <div className="score-breakdown-row"><span>Blocked</span><span className="neg">-{sc.blockPenalty}</span></div>}
+                            <div className="score-breakdown-row total"><span>Total</span><span>{sc.score}%</span></div>
+                          </div>
+                          <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                            <button className="t-btn" onClick={() => openEdit(sel)}><I.edit /> Edit</button>
+                            <button className="t-btn" onClick={() => setFocusProjectId(sel.id)}>Focus mode</button>
+                            <button className="t-btn" onClick={() => {
+                              const md = projectToMarkdown(sel, sc);
+                              const blob = new Blob([md], { type: "text/markdown" });
+                              const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: sel.name + ".md" });
+                              a.click(); toast("Exported as Markdown.");
+                            }}>Export .md</button>
+                            <button className="t-btn ship-btn" onClick={() => {
+                              updateProject(sel.id, { status: "shipped", lastTouched: new Date().toISOString() });
+                              toast(sel.name + " shipped! Moving to Archive.");
+                              setTimeout(() => setView("archive"), 1200);
+                            }}>
+                              {I.check(11)} Mark as done
+                            </button>
+                            <button className="t-btn danger" onClick={() => removeProject(sel.id)}>Remove</button>
+                          </div>
                         </div>
-                      </div>
+                      )}
                     </div>
 
                     {/* ── Inline edit panel ── */}
@@ -2285,17 +2349,18 @@ export default function App() {
                       </div>
                     )}
                     <div className="detail-stats">
-                      <div className="dstat"><div className="dstat-lbl">Track</div><div className="dstat-val">{sel.track || "-"}</div></div>
+                      <div className="dstat"><div className="dstat-lbl">Track</div><div className="dstat-val">{sel.track || "—"}</div></div>
                       <div className="dstat"><div className="dstat-lbl">Deadline</div><div className="dstat-val">{fmtDays(livedays(sel))}</div></div>
                       <div className="dstat"><div className="dstat-lbl">Focus time</div><div className="dstat-val" style={{ color }}>{fmtDuration(totalFocusTime(sel.focusSessions ?? []))}</div></div>
                       <div className="dstat"><div className="dstat-lbl">Completion</div><div className="dstat-val">{taskCompletion(sel)}%</div></div>
                     </div>
-                    {(sel.scoreHistory ?? []).length >= 2 && (
+                    {(sel.scoreHistory ?? []).length >= 2 && sel.status !== "shipped" && (
                       <div style={{ padding: "12px var(--pad-section)", borderBottom: "1px solid var(--rule)" }}>
                         <div className="bar-key" style={{ marginBottom: 6 }}>Score history (30 days)</div>
                         <Sparkline history={sel.scoreHistory} color={color} />
                       </div>
                     )}
+                    {sel.status !== "shipped" && (
                     <div className="bars-section">
                       {(["impact", "effort", "energy", "confidence"] as const).map(k => (
                         <div className="bar-row" key={k}>
@@ -2304,6 +2369,7 @@ export default function App() {
                         </div>
                       ))}
                     </div>
+                    )}
                     <div className="tasks-section">
                       <div className="tasks-head">
                         <div className="tasks-title">Tasks</div>
@@ -2335,7 +2401,7 @@ export default function App() {
               <div className="ai-wrap">
                 <div className="ai-head">
                   <div className="ai-title">AI Advisor</div>
-                  <div className="ai-sub">Powered by <strong>Ollama</strong> - runs 100% locally, no API key, no internet required</div>
+                  <div className="ai-sub">Powered by <strong>Ollama</strong> — runs 100% locally, no API key, no internet required</div>
                 </div>
                 <div className="ai-setup">
                   <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, marginBottom: 10 }}>
@@ -2354,7 +2420,7 @@ export default function App() {
                       const s = await checkOllamaStatus();
                       const count = s.models.length;
                       if (s.running) toast("Ollama running - " + count + " model" + (count === 1 ? "" : "s") + " available");
-                      else toast("Ollama not detected - is it running?");
+                      else toast("Ollama not detected — is it running?");
                     }}>Check status</button>
                   </div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
@@ -2378,7 +2444,7 @@ export default function App() {
                       <span className={"ai-status-dot" + (ollamaStatus.running ? " connected" : "")} />
                       {ollamaStatus.running
                         ? "Running - " + (ollamaStatus.models.length > 0 ? ollamaStatus.models.join(", ") : "no models pulled yet")
-                        : "Not detected - start Ollama or run: ollama serve"
+                        : "Not detected — start Ollama or run: ollama serve"
                       }
                     </div>
                   )}
@@ -2419,7 +2485,7 @@ export default function App() {
               <div style={{ padding: "var(--pad-section)", display: "flex", flexDirection: "column", gap: 20, flex: 1, overflowY: "auto" }}>
                 <div>
                   <div className="settings-title">Archive</div>
-                  <div className="settings-sub">Shipped projects - completed work, preserved for reference</div>
+                  <div className="settings-sub">Shipped projects — completed work, preserved for reference</div>
                 </div>
                 {sorted.filter(p => p.status === "shipped").length === 0 ? (
                   <div className="task-empty" style={{ padding: "40px 0", textAlign: "center" }}>
@@ -2442,7 +2508,7 @@ export default function App() {
                           </div>
                           <div className="pc-desc">{p.desc}</div>
                           <div className="pc-pills">
-                            <span className="pill pill-dim">{p.track || "-"}</span>
+                            <span className="pill pill-dim">{p.track || "—"}</span>
                             {p.tags.slice(0, 3).map(t => <span key={t} className="pill pill-dim">#{t}</span>)}
                           </div>
                           <div className="archive-stats">
@@ -2620,7 +2686,7 @@ export default function App() {
                       {settings.gitHubToken && <button className="btn-cancel" style={{ color: "#ef4444" }} onClick={() => { patchSettings({ gitHubToken: "" }); setGhTokenDraft(""); toast("Token removed."); }}>Remove</button>}
                     </div>
                   </div>
-                  <div className="srow"><div className="si"><p>Ollama model</p><span>AI Advisor model - run: ollama pull llama3.2</span></div>
+                  <div className="srow"><div className="si"><p>Ollama model</p><span>AI Advisor model — run: ollama pull llama3.2</span></div>
                     <input className="s-input" value={settings.ollamaModel} onChange={e => patchSettings({ ollamaModel: e.target.value })} placeholder="llama3.2" /></div>
                   <div className="srow"><div className="si"><p>Ollama URL</p><span>Default: http://localhost:11434</span></div>
                     <input className="s-input" value={settings.ollamaUrl} onChange={e => patchSettings({ ollamaUrl: e.target.value })} placeholder="http://localhost:11434" /></div>
@@ -2640,7 +2706,7 @@ export default function App() {
                   </div>
                   {sorted.length > 0 && (
                     <div className="digest-preview">
-                      <div style={{ fontFamily: "var(--font-mono)", fontSize: 8, letterSpacing: ".14em", textTransform: "uppercase", color: "var(--text3)", marginBottom: 4 }}>Preview - today's digest</div>
+                      <div style={{ fontFamily: "var(--font-mono)", fontSize: 8, letterSpacing: ".14em", textTransform: "uppercase", color: "var(--text3)", marginBottom: 4 }}>Preview — today's digest</div>
                       {sorted.filter(p => p.status !== "shipped").slice(0, 3).map((p, i) => {
                         const sc = scoreProject(p, projects); const color = projectColor(p);
                         return (
@@ -2694,7 +2760,7 @@ export default function App() {
                   <div className="srow">
                     <div className="si"><p>Clear all data</p><span style={{ color: "#ef4444" }}>Cannot be undone</span></div>
                     <button className="btn-cancel" style={{ color: "#ef4444", borderColor: "rgba(239,68,68,0.3)" }}
-                      onClick={() => { const snap = projects; saveProjects([]); setView("dashboard"); toast("Data cleared - undo?"); undoRef.current = () => saveProjects(snap); undoTimer.current = setTimeout(() => { undoRef.current = null; }, 5000); }}>
+                      onClick={() => { const snap = projects; saveProjects([]); setView("dashboard"); toast("Data cleared — undo?"); undoRef.current = () => saveProjects(snap); undoTimer.current = setTimeout(() => { undoRef.current = null; }, 5000); }}>
                       Clear data
                     </button>
                   </div>
