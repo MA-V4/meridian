@@ -1,0 +1,6 @@
+* text=auto
+*.ts linguist-language=TypeScript
+*.tsx linguist-language=TypeScript
+*.css linguist-language=CSS
+*.md linguist-documentation=true
+LICENCE linguist-documentation=true

@@ -1,0 +1,89 @@
+MERIDIAN - SOURCE AVAILABLE LICENCE
+Copyright (c) 2026 Mihran Ali. All rights reserved.
+
+────────────────────────────────────────────────────────────────
+
+DEFINITIONS
+
+"Software" means the Meridian application, including all source
+code, compiled binaries, documentation, assets, and associated
+files in this repository.
+
+"Personal Use" means use by an individual solely for private,
+non-commercial purposes on their own devices.
+
+"Commercial Use" means any use intended for or directed toward
+commercial advantage or monetary compensation, including but not
+limited to: selling, licensing, sublicensing, offering as a
+service (SaaS), or incorporating into a commercial product.
+
+────────────────────────────────────────────────────────────────
+
+GRANT OF RIGHTS
+
+1. PERSONAL USE
+   You are granted a non-exclusive, non-transferable right to
+   download, install, and use the Software for Personal Use at
+   no charge.
+
+2. VIEWING SOURCE CODE
+   You may view and study the source code for educational and
+   personal reference purposes.
+
+3. CONTRIBUTIONS
+   You may submit pull requests or issues to the official
+   repository. By doing so, you grant the author a perpetual,
+   irrevocable, royalty-free licence to use your contribution
+   in any way, including in commercial versions of the Software.
+
+────────────────────────────────────────────────────────────────
+
+RESTRICTIONS
+
+You may NOT, without prior written permission from the author:
+
+a) Use the Software or any substantial portion of it for
+   Commercial Use.
+
+b) Redistribute, sell, sublicense, or offer the Software
+   (or any derivative work) to third parties.
+
+c) Remove or alter any copyright notice, author attribution,
+   branding, or this licence notice from any copy of the
+   Software.
+
+d) Publish or distribute modified versions of the Software
+   under the same or a similar name.
+
+e) Use the name "Meridian", the author's name "Mihran Ali",
+   or any associated branding to promote derivative works
+   without written consent.
+
+────────────────────────────────────────────────────────────────
+
+COMMERCIAL LICENSING
+
+If you wish to use the Software for Commercial Use, integrate
+it into a commercial product, or redistribute it, please
+contact the author to discuss a commercial licence:
+
+  Website:  https://mihranali.vercel.app
+  GitHub:   https://github.com/MA-V4
+
+────────────────────────────────────────────────────────────────
+
+DISCLAIMER
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND
+NON-INFRINGEMENT. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF
+CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+────────────────────────────────────────────────────────────────
+
+For permissions beyond the scope of this licence, contact:
+https://mihranali.vercel.app
